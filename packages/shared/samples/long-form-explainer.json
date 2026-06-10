@@ -1,0 +1,80 @@
+{
+  "meta": {
+    "title": "トヨタ自動車 まるわかり解説（サンプル）",
+    "lang": "ja",
+    "format": "wide",
+    "disclaimer": "本コンテンツは情報提供を目的としたもので、特定の金融商品の売買を推奨・勧誘するものではありません。数値はサンプルです。投資判断はご自身の責任で行ってください。",
+    "sources": [
+      { "label": "J-Quants（東証 株価・財務データ）", "url": "https://jpx-jquants.com/" },
+      { "label": "EDINET（有価証券報告書）", "url": "https://disclosure.edinet-fsa.go.jp/" },
+      { "label": "トヨタ自動車 IR", "url": "https://global.toyota/jp/ir/" }
+    ]
+  },
+  "narration": [
+    { "text": "トヨタ自動車について、データをもとに、企業の姿をまるごと解説します。" },
+    { "text": "トヨタは、日本を代表する自動車メーカーです。世界各地で車を生産・販売しています。" },
+    { "text": "売上の中心は自動車事業ですが、近年は金融や、新しいモビリティの分野にも広げています。" },
+    { "text": "まず、売上の推移を見てみましょう。データ上は、ここ数年で大きく伸びています。" },
+    { "text": "主要な財務指標を整理すると、このようになっています。いずれも公表データに基づく数字です。" },
+    { "text": "株価の割安・割高をはかる指標も見てみます。市場ではこのように評価されています。" },
+    { "text": "一方で、為替の変動や、電動化への投資負担など、注意して見るべき点もあります。" },
+    { "text": "まとめると、データ上は、安定した収益基盤を持つ大型の自動車メーカーという姿が見えてきます。" },
+    { "text": "数値の詳細と出典は、概要欄をご確認ください。投資判断はご自身で行ってください。" }
+  ],
+  "scenes": [
+    { "section": "イントロ", "narrationIndex": 0, "caption": "トヨタ自動車を、データで解説", "visualRef": null },
+    { "section": "事業", "narrationIndex": 1, "caption": "世界トップ級の自動車メーカー", "visualRef": null },
+    { "section": "事業", "narrationIndex": 2, "caption": "自動車＋金融＋新モビリティ", "visualRef": null },
+    { "section": "財務", "narrationIndex": 3, "caption": "売上は数年で大きく伸長", "visualRef": "rev-trend" },
+    { "section": "財務", "narrationIndex": 4, "caption": "主要 財務指標", "visualRef": "fin-stats" },
+    { "section": "評価", "narrationIndex": 5, "caption": "市場の評価（バリュエーション）", "visualRef": "valuation" },
+    { "section": "リスク", "narrationIndex": 6, "caption": "為替・電動化投資に注意", "visualRef": null },
+    { "section": "まとめ", "narrationIndex": 7, "caption": "安定した収益基盤を持つ大型株", "visualRef": null },
+    { "section": "まとめ", "narrationIndex": 8, "caption": "出典・詳細は概要欄へ", "visualRef": null }
+  ],
+  "assets": [
+    {
+      "id": "rev-trend",
+      "type": "line",
+      "spec": {
+        "kind": "line",
+        "unit": "兆円",
+        "points": [
+          { "label": "FY21", "value": 27.2 },
+          { "label": "FY22", "value": 31.4 },
+          { "label": "FY23", "value": 37.2 },
+          { "label": "FY24", "value": 45.1 },
+          { "label": "FY25", "value": 48.0 }
+        ]
+      }
+    },
+    {
+      "id": "fin-stats",
+      "type": "stats",
+      "spec": {
+        "kind": "stats",
+        "items": [
+          { "label": "売上（営業収益）", "value": "48.0兆円", "note": "FY25 サンプル" },
+          { "label": "営業利益", "value": "5.4兆円", "note": "FY25 サンプル" },
+          { "label": "営業利益率", "value": "11.3%", "note": "サンプル" },
+          { "label": "PBR", "value": "1.1倍", "note": "サンプル" },
+          { "label": "自己資本比率", "value": "38%", "note": "サンプル" },
+          { "label": "配当利回り", "value": "2.8%", "note": "サンプル" }
+        ]
+      }
+    },
+    {
+      "id": "valuation",
+      "type": "chart",
+      "spec": {
+        "kind": "bar",
+        "unit": "倍",
+        "signed": false,
+        "bars": [
+          { "label": "トヨタ PER（実績）", "value": 9.0 },
+          { "label": "業界平均 PER（参考）", "value": 12.0 }
+        ]
+      }
+    }
+  ]
+}

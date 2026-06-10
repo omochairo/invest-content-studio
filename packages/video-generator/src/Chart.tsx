@@ -3,11 +3,13 @@ import type { ChartSpec } from "@ics/shared";
 
 const POS = "#3fb950";
 const NEG = "#f85149";
+const NEUTRAL = "#4a8fe0";
 
 /** Data-driven horizontal bar chart; bars grow in with a staggered spring. */
 export const Chart = ({ spec }: { spec: ChartSpec }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
+  const signed = spec.signed ?? true;
   const max = Math.max(...spec.bars.map((b) => Math.abs(b.value)), 1);
 
   return (
@@ -20,7 +22,7 @@ export const Chart = ({ spec }: { spec: ChartSpec }) => {
         });
         const fill = (Math.abs(bar.value) / max) * grow;
         const positive = bar.value >= 0;
-        const color = positive ? POS : NEG;
+        const color = !signed ? NEUTRAL : positive ? POS : NEG;
         return (
           <div key={i}>
             <div
@@ -34,7 +36,7 @@ export const Chart = ({ spec }: { spec: ChartSpec }) => {
             >
               <span>{bar.label}</span>
               <span style={{ color, fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>
-                {positive ? "+" : ""}
+                {signed && positive ? "+" : ""}
                 {bar.value.toFixed(1)}
                 {spec.unit ?? ""}
               </span>

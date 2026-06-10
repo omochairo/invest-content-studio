@@ -49,6 +49,8 @@ export interface Scene {
   caption: string;
   /** Asset id to display during this scene, or null for text-only. */
   visualRef?: string | null;
+  /** Optional chapter label for long-form layouts (e.g. "財務"). Short. */
+  section?: string | null;
 }
 
 /** A single bar in a bar chart (e.g. an index's daily % change). */
@@ -62,14 +64,50 @@ export interface ChartSpec {
   kind: "bar";
   /** Unit suffix shown on values, e.g. "%". */
   unit?: string;
+  /** When true (default), values are signed deltas: "+"/"-" prefix and
+   *  green/red coloring (e.g. daily % change). Set false for absolute
+   *  magnitudes (e.g. PER, counts) — no sign prefix, neutral coloring. */
+  signed?: boolean;
   bars: ChartBar[];
 }
 
-export type AssetSpec = ChartSpec;
+/** A point in a trend line (e.g. revenue by fiscal year). */
+export interface LinePoint {
+  label: string;
+  value: number;
+}
+
+/** Declarative trend-line spec (e.g. multi-year revenue / profit). */
+export interface LineSpec {
+  kind: "line";
+  /** Unit suffix shown on the axis/values, e.g. "兆円". */
+  unit?: string;
+  points: LinePoint[];
+}
+
+/** One headline metric in a stat grid (e.g. PER, 自己資本比率). */
+export interface StatItem {
+  label: string;
+  /** Pre-formatted display value (kept as a string so the renderer never
+   *  reformats a load-bearing number). */
+  value: string;
+  /** Optional small note under the value (e.g. "前年比" or a source year). */
+  note?: string | null;
+}
+
+/** Declarative grid of headline metrics. */
+export interface StatGridSpec {
+  kind: "stats";
+  items: StatItem[];
+}
+
+/** Any data-driven visual. Discriminated by `kind`. All variants are
+ *  domain-agnostic so omochairo (toys) can reuse the same renderer. */
+export type AssetSpec = ChartSpec | LineSpec | StatGridSpec;
 
 export interface Asset {
   id: string;
-  type: "chart" | "image";
+  type: "chart" | "line" | "stats" | "image";
   spec: AssetSpec;
 }
 
