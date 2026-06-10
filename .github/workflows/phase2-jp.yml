@@ -112,7 +112,17 @@ jobs:
         run: |
           f="packages/video-generator/out/$CODE.mp4"
           ls -lh "$f"
-          ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 "$f" || true
+          # Derive length from the audio manifest (no ffprobe dependency on the
+          # runner): the video is exactly the sum of clip durations + padding.
+          python3 - "packages/video-generator/public/audio/manifest.json" <<'PY'
+          import json, sys, math
+          PAD_MS, FPS = 350, 30
+          m = json.load(open(sys.argv[1], encoding="utf-8"))
+          clips = m["clips"]
+          frames = sum(max(1, math.ceil(((c["durationMs"] + PAD_MS) / 1000) * FPS)) for c in clips)
+          print(f"clips={len(clips)} frames={frames} duration={frames/FPS:.1f}s "
+                f"(audio {sum(c['durationMs'] for c in clips)/1000:.1f}s + {PAD_MS}ms/scene pad)")
+          PY
       - name: Upload long-form mp4 artifact
         if: ${{ github.event.inputs.render != 'false' }}
         uses: actions/upload-artifact@v4
