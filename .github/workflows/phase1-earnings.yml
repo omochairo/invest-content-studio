@@ -14,6 +14,10 @@ on:
         description: "Ticker symbol to render (must be on the watchlist coverage)"
         default: "NVDA"
         required: true
+      publish:
+        description: "Upload to YouTube (unlisted; unaudited projects land it private until audit)"
+        type: boolean
+        default: false
 
 concurrency:
   group: phase1-earnings-${{ github.ref }}
@@ -99,3 +103,11 @@ jobs:
             outputs/earnings/${{ env.SYMBOL }}.json
             outputs/content/${{ env.SYMBOL }}.json
           if-no-files-found: error
+
+      - name: 1e Upload to YouTube (unlisted)
+        if: ${{ inputs.publish }}
+        env:
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+        run: npm run yt:upload -- "$SYMBOL"
