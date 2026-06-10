@@ -1,9 +1,9 @@
 {
   "meta": {
-    "title": "トヨタ自動車 まるわかり解説（サンプル）",
+    "title": "トヨタ自動車 まるわかり解説",
     "lang": "ja",
     "format": "wide",
-    "disclaimer": "本コンテンツは情報提供を目的としたもので、特定の金融商品の売買を推奨・勧誘するものではありません。数値はサンプルです。投資判断はご自身の責任で行ってください。",
+    "disclaimer": "本コンテンツは情報提供を目的としたもので、特定の金融商品の売買を推奨・勧誘するものではありません。数値は FY2025/3（連結・IFRS）の公表データに基づきます。投資判断はご自身の責任で行ってください。",
     "sources": [
       { "label": "J-Quants（東証 株価・財務データ）", "url": "https://jpx-jquants.com/" },
       { "label": "EDINET（有価証券報告書）", "url": "https://disclosure.edinet-fsa.go.jp/" },
@@ -44,7 +44,8 @@
           { "label": "FY22", "value": 31.4 },
           { "label": "FY23", "value": 37.2 },
           { "label": "FY24", "value": 45.1 },
-          { "label": "FY25", "value": 48.0 }
+          { "label": "FY25", "value": 48.0 },
+          { "label": "FY26", "value": 50.7 }
         ]
       }
     },
@@ -54,12 +55,12 @@
       "spec": {
         "kind": "stats",
         "items": [
-          { "label": "売上（営業収益）", "value": "48.0兆円", "note": "FY25 サンプル" },
-          { "label": "営業利益", "value": "5.4兆円", "note": "FY25 サンプル" },
-          { "label": "営業利益率", "value": "11.3%", "note": "サンプル" },
-          { "label": "PBR", "value": "1.1倍", "note": "サンプル" },
-          { "label": "自己資本比率", "value": "38%", "note": "サンプル" },
-          { "label": "配当利回り", "value": "2.8%", "note": "サンプル" }
+          { "label": "売上（営業収益）", "value": "48.0兆円", "note": "FY2025/3 連結" },
+          { "label": "営業利益", "value": "4.8兆円", "note": "FY2025/3 連結" },
+          { "label": "営業利益率", "value": "10.0%", "note": "FY2025/3" },
+          { "label": "ROE", "value": "13.3%", "note": "FY2025/3" },
+          { "label": "自己資本比率", "value": "38.4%", "note": "FY2025/3" },
+          { "label": "配当利回り", "value": "3.4%", "note": "FY2025/3 実績" }
         ]
       }
     },
@@ -71,8 +72,8 @@
         "unit": "倍",
         "signed": false,
         "bars": [
-          { "label": "トヨタ PER（実績）", "value": 9.0 },
-          { "label": "業界平均 PER（参考）", "value": 12.0 }
+          { "label": "PER（株価収益率）", "value": 7.3 },
+          { "label": "PBR（株価純資産倍率）", "value": 0.95 }
         ]
       }
     }
