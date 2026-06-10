@@ -1,0 +1,21 @@
+{
+  "name": "invest-content-studio",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Automated investment content studio — structured data to audio/video pipeline (R&D)",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "tts": "tsx packages/audio-generator/src/synthesize.ts",
+    "render": "npm --workspace @ics/video-generator run render",
+    "still": "npm --workspace @ics/video-generator run still",
+    "studio": "npm --workspace @ics/video-generator run studio"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

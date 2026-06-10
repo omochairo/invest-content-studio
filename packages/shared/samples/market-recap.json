@@ -1,0 +1,42 @@
+{
+  "meta": {
+    "title": "今日のマーケットまとめ（サンプル）",
+    "lang": "ja",
+    "format": "short",
+    "disclaimer": "本コンテンツは情報提供を目的としたもので、特定の金融商品の売買を推奨・勧誘するものではありません。投資判断はご自身の責任で行ってください。",
+    "sources": [
+      { "label": "日本取引所グループ 相場情報", "url": "https://www.jpx.co.jp/" },
+      { "label": "CoinGecko（暗号資産価格）", "url": "https://www.coingecko.com/" }
+    ]
+  },
+  "narration": [
+    { "text": "今日の主要マーケットを、30秒で振り返ります。" },
+    { "text": "日経平均株価は、前日比プラス1.2パーセントで取引を終えました。" },
+    { "text": "為替市場では、1ドルおよそ150円台で推移しています。" },
+    { "text": "暗号資産のビットコインは、前日比マイナス2.0パーセントとなりました。" },
+    { "text": "数値はサンプルです。詳しくは概要欄の出典をご確認ください。投資判断はご自身で。" }
+  ],
+  "scenes": [
+    { "narrationIndex": 0, "caption": "今日のマーケットまとめ", "visualRef": null },
+    { "narrationIndex": 1, "caption": "日経平均 +1.2%", "visualRef": "daily-change" },
+    { "narrationIndex": 2, "caption": "ドル円 150円台", "visualRef": "daily-change" },
+    { "narrationIndex": 3, "caption": "ビットコイン -2.0%", "visualRef": "daily-change" },
+    { "narrationIndex": 4, "caption": "出典は概要欄へ", "visualRef": null }
+  ],
+  "assets": [
+    {
+      "id": "daily-change",
+      "type": "chart",
+      "spec": {
+        "kind": "bar",
+        "unit": "%",
+        "bars": [
+          { "label": "日経平均", "value": 1.2 },
+          { "label": "S&P500", "value": 0.5 },
+          { "label": "ドル円", "value": 0.3 },
+          { "label": "ビットコイン", "value": -2.0 }
+        ]
+      }
+    }
+  ]
+}

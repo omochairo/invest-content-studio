@@ -57,3 +57,8 @@ ENV/
 # Output Files (Generated articles, audio, videos)
 /outputs/
 /temp/
+
+# Generated TTS output (written into the renderer's public dir)
+packages/video-generator/public/audio/
+# Remotion render output
+packages/video-generator/out/
