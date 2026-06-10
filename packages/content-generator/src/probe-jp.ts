@@ -128,6 +128,17 @@ async function radikabunavi(): Promise<void> {
     const fy = fin.fiscalYears?.[latest];
     console.log(`\n[RKN] get_edinet_financial_data: company=${fin.companyName} latestFY=${latest}`);
     console.log(`     all FY keys: ${Object.keys(fin.fiscalYears ?? {}).join(", ")}`);
+    // Per-year trend table — confirms netSales availability across the
+    // USGAAP (2016-2020) / IFRS (2021-) standard switch for the fetch layer.
+    const years = Object.values(fin.fiscalYears ?? {}).sort((a, b) =>
+      String(a.fiscalYearEnd).localeCompare(String(b.fiscalYearEnd)),
+    );
+    console.log("     year | std | netSales | operatingIncome | per | pbr");
+    for (const y of years) {
+      console.log(
+        `     ${y.fiscalYearEnd} | ${y.accountingStandard} | ${y.netSales} | ${y.operatingIncome} | ${y.per ?? y.priceEarningsRatio} | ${y.pbr}`,
+      );
+    }
     if (fy) {
       console.log(`     latest FY field count: ${Object.keys(fy).length}`);
       for (const [k, v] of Object.entries(fy)) console.log(`       ${k} = ${preview(v)}`);
