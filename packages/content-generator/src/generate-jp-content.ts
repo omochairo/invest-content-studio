@@ -56,6 +56,8 @@ const DISCLAIMER =
 const f1 = (n: number) => n.toFixed(1); // always 1 decimal for display consistency
 /** Yen -> 兆円 display string, 1 decimal (48036704000000 -> "48.0兆円"). */
 const choYen = (yen: number) => `${f1(yen / 1e12)}兆円`;
+/** Yen -> 兆円 / 億円 auto display (peer averages span both scales). */
+const jpyAuto = (yen: number) => (Math.abs(yen) >= 1e12 ? choYen(yen) : `${f1(yen / 1e8)}億円`);
 /** Yen -> 兆 as a number, 1 decimal (for chart/line values). */
 const choNum = (yen: number) => Math.round((yen / 1e12) * 10) / 10;
 const pct1 = (n: number) => `${f1(n)}%`;
@@ -156,7 +158,7 @@ function buildLatestYoy(p: CompanyProfile): Asset | null {
 function buildPeerComparison(p: CompanyProfile): Asset | null {
   const pc = p.peerComparison;
   if (!pc) return null;
-  const fmt = (v: number, unit: string) => (unit === "%" ? pct1(v) : `${f1(v)}${unit}`);
+  const fmt = (v: number, unit: string) => (unit === "%" ? pct1(v) : unit === "円" ? jpyAuto(v) : `${f1(v)}${unit}`);
   const items = pc.metrics
     .filter((m) => m.company != null && m.industryAverage != null)
     .map((m) => ({
@@ -228,7 +230,7 @@ function factSheet(p: CompanyProfile): string {
     );
   const pc = p.peerComparison;
   if (pc) {
-    const pcFmt = (v: number, unit: string) => (unit === "%" ? pct1(v) : `${f1(v)}倍`);
+    const pcFmt = (v: number, unit: string) => (unit === "%" ? pct1(v) : unit === "円" ? jpyAuto(v) : `${f1(v)}${unit}`);
     const cmp = pc.metrics
       .filter((m) => m.company != null && m.industryAverage != null)
       .map((m) => `${m.label} ${pcFmt(m.company as number, m.unit)}（業種平均 ${pcFmt(m.industryAverage as number, m.unit)}）`)

@@ -114,7 +114,7 @@ async function edb<T>(path: string): Promise<T | null> {
 const norm = (s: string): string => s.normalize("NFKC").replace(/\s+/g, "").trim();
 const lk = (k: string): string => k.toLowerCase().replace(/[-_\s]/g, "");
 
-/** Find the first finite number under any candidate key (normalized) in a flat-ish object. */
+/** First finite number under any candidate key (normalized) of a flat object. */
 function readNum(bag: Record<string, unknown> | null, keys: string[]): number | null {
   if (!bag) return null;
   const want = new Set(keys.map(lk));
@@ -124,24 +124,6 @@ function readNum(bag: Record<string, unknown> | null, keys: string[]): number | 
   return null;
 }
 
-/** Locate the averages bag: a sub-object whose key looks like average/avg/mean/stats; else the root. */
-function averagesBag(root: unknown): Record<string, unknown> | null {
-  if (!root || typeof root !== "object") return null;
-  const r = root as Record<string, unknown>;
-  for (const [k, v] of Object.entries(r)) {
-    if (/aver|avg|mean|stat/i.test(k) && v && typeof v === "object" && !Array.isArray(v)) {
-      return v as Record<string, unknown>;
-    }
-  }
-  return r; // fall back to top-level scalars
-}
-
-/**
- * Same-industry comparison via edinetdb. Resolves the sector (J-Quants 33業種
- * 日本語名) to an edinetdb industry slug, then reads that industry's average
- * per/pbr/roe/operating-margin. `own` are the company's own values (from
- * ラジ株ナビ) so both sides are shown together. Returns null if unavailable.
- */
 /** First array found at top level or under any envelope key (data/items/results/…). */
 function firstArray(x: unknown): Record<string, unknown>[] {
   if (Array.isArray(x)) return x as Record<string, unknown>[];
@@ -151,53 +133,59 @@ function firstArray(x: unknown): Record<string, unknown>[] {
   return [];
 }
 const rowName = (r: Record<string, unknown>): string =>
-  String(r.name ?? r.name_ja ?? r.label ?? r.industry ?? r.japanese_name ?? r.industry_name ?? "");
+  String(r.name_ja ?? r.name ?? r.label ?? r.industry ?? r.japanese_name ?? r.industry_name ?? "");
 const rowSlug = (r: Record<string, unknown>): string => {
   const s = r.slug ?? r.code ?? r.id ?? r.key;
   return s != null ? String(s) : "";
 };
 
+/**
+ * Same-industry comparison via edinetdb. The `/v1/industries` LIST rows already
+ * carry the aggregates we need (avg_operating_margin / avg_roe / avg_revenue /
+ * company_count), so ONE request covers it — the per-industry detail endpoint
+ * returns member companies (not averages) and is not used. Resolves the sector
+ * (J-Quants 33業種 日本語名) to its row by name, then pairs each industry
+ * average with the company's own value (from ラジ株ナビ, so both sides agree).
+ * §2-safe: facts only, no rival tickers named. Returns null if unavailable.
+ */
 async function fetchPeerComparison(
   sector: string | null,
-  own: { operatingMargin: number | null; roe: number | null; per: number | null; pbr: number | null },
+  own: { operatingMargin: number | null; roe: number | null; netSales: number | null },
 ): Promise<PeerComparison | null> {
   if (!EDB_KEY || !sector) return null;
-  const list = await edb<unknown>("industries");
-  const rows = firstArray(list);
-  console.log(`    edinetdb industries: ${rows.length} rows; sample=${JSON.stringify(rows[0] ?? list).slice(0, 300)}`);
-  if (!rows.length) return null;
+  const rows = firstArray(await edb<unknown>("industries"));
+  if (!rows.length) {
+    console.log("    edinetdb: /industries returned no rows — skipping peer comparison");
+    return null;
+  }
   const want = norm(sector);
-  const hit = rows.find((r) => rowName(r) && norm(rowName(r)) === want) ?? rows.find((r) => rowName(r) && norm(rowName(r)).includes(want));
-  const slug = hit ? rowSlug(hit) : "";
-  if (!slug) {
-    console.log(`    edinetdb: no industry slug for sector "${sector}" (have ${rows.length}: ${rows.slice(0, 8).map(rowName).join("/")}…)`);
+  const hit =
+    rows.find((r) => rowName(r) && norm(rowName(r)) === want) ??
+    rows.find((r) => rowName(r) && norm(rowName(r)).includes(want));
+  if (!hit) {
+    console.log(`    edinetdb: no industry match for sector "${sector}" (${rows.length} industries)`);
     return null;
   }
-  const detail = await edb<unknown>(`industries/${slug}`);
-  if (!detail) return null;
-  console.log(`    edinetdb industries/${slug} raw: ${JSON.stringify(detail).slice(0, 500)}`);
-  const bag = averagesBag(detail);
-  const sample =
-    readNum(detail as Record<string, unknown>, ["company_count", "companies_count", "count", "total", "n"]) ??
-    (Array.isArray((detail as Record<string, unknown>).companies) ? ((detail as Record<string, unknown>).companies as unknown[]).length : null);
-  console.log(`    edinetdb: ${sector} -> ${slug}, sample=${sample}, avg keys=[${bag ? Object.keys(bag).slice(0, 12).join(",") : ""}]`);
-
-  const metrics: PeerMetric[] = [
-    { label: "営業利益率", unit: "%", company: own.operatingMargin, industryAverage: readNum(bag, ["operating_margin", "operatingmargin", "avg_operating_margin", "operating_income_margin"]) },
-    { label: "ROE", unit: "%", company: own.roe, industryAverage: readNum(bag, ["roe", "roe_official", "avg_roe"]) },
-    { label: "PER", unit: "倍", company: own.per, industryAverage: readNum(bag, ["per", "avg_per", "pe_ratio"]) },
-    { label: "PBR", unit: "倍", company: own.pbr, industryAverage: readNum(bag, ["pbr", "avg_pbr", "pb_ratio"]) },
-  ];
-  if (metrics.every((m) => m.industryAverage == null)) {
-    console.log("    edinetdb: industry detail had no recognizable average fields — skipping peer comparison");
+  const sample = readNum(hit, ["company_count", "companies_count", "count", "total", "n"]);
+  const metrics = (
+    [
+      { label: "営業利益率", unit: "%", company: own.operatingMargin, industryAverage: readNum(hit, ["avg_operating_margin", "operating_margin"]) },
+      { label: "ROE", unit: "%", company: own.roe, industryAverage: readNum(hit, ["avg_roe", "roe"]) },
+      { label: "売上規模", unit: "円", company: own.netSales, industryAverage: readNum(hit, ["avg_revenue", "avg_net_sales", "revenue"]) },
+    ] satisfies PeerMetric[]
+  ).filter((m) => m.industryAverage != null);
+  if (metrics.length === 0) {
+    console.log(`    edinetdb: industry "${rowName(hit)}" had no usable average fields — skipping`);
     return null;
   }
+  const slug = rowSlug(hit);
+  console.log(`    edinetdb: ${sector} -> ${rowName(hit)} (n=${sample}); ${metrics.map((m) => `${m.label}平均${m.industryAverage}`).join(" ")}`);
   return {
-    industry: rowName(hit as Record<string, unknown>) || sector,
+    industry: rowName(hit) || sector,
     industrySlug: slug,
     sampleSize: sample,
     metrics,
-    source: { label: "edinetdb.jp（業種平均・EDINET 集計）", url: `https://edinetdb.jp/industries/${slug}` },
+    source: { label: "edinetdb.jp（業種平均・EDINET 集計）", url: slug ? `https://edinetdb.jp/industries/${slug}` : "https://edinetdb.jp/" },
   };
 }
 
@@ -234,8 +222,7 @@ async function buildProfile(code: string): Promise<CompanyProfile> {
   const peerComparison = await fetchPeerComparison(m.S33Nm ?? null, {
     operatingMargin: ownMargin,
     roe: num(fy.roe),
-    per: ownPer,
-    pbr: num(fy.pbr),
+    netSales: num(fy.netSales),
   });
 
   return {
