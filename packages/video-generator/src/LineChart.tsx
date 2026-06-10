@@ -1,0 +1,66 @@
+import { spring, useCurrentFrame, useVideoConfig } from "remotion";
+import type { LineSpec } from "@ics/shared";
+
+const LINE = "#3fb950";
+const GRID = "#1b2838";
+const TEXT = "#cdd9e5";
+
+/** Data-driven trend line (e.g. multi-year revenue). The polyline draws in
+ *  left-to-right via stroke-dashoffset, points pop in with a staggered spring. */
+export const LineChart = ({ spec }: { spec: LineSpec }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const W = 1240;
+  const H = 540;
+  const PAD = 80;
+  const pts = spec.points;
+  const max = Math.max(...pts.map((p) => p.value), 1);
+  const min = Math.min(...pts.map((p) => p.value), 0);
+  const span = max - min || 1;
+
+  const xy = pts.map((p, i) => {
+    const x = PAD + (i / Math.max(pts.length - 1, 1)) * (W - PAD * 2);
+    const y = H - PAD - ((p.value - min) / span) * (H - PAD * 2);
+    return { x, y, p };
+  });
+
+  const draw = spring({ frame, fps, config: { damping: 200 }, durationInFrames: 40 });
+  const path = xy.map((c, i) => `${i === 0 ? "M" : "L"} ${c.x} ${c.y}`).join(" ");
+  // Approximate path length for the dash animation (sum of segment lengths).
+  let len = 0;
+  for (let i = 1; i < xy.length; i++) {
+    len += Math.hypot(xy[i].x - xy[i - 1].x, xy[i].y - xy[i - 1].y);
+  }
+
+  return (
+    <svg width={W} height={H} style={{ overflow: "visible" }}>
+      {/* baseline */}
+      <line x1={PAD} y1={H - PAD} x2={W - PAD} y2={H - PAD} stroke={GRID} strokeWidth={2} />
+      <path
+        d={path}
+        fill="none"
+        stroke={LINE}
+        strokeWidth={6}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        strokeDasharray={len}
+        strokeDashoffset={len * (1 - draw)}
+      />
+      {xy.map((c, i) => {
+        const pop = spring({ frame: frame - i * 6, fps, config: { damping: 200 } });
+        return (
+          <g key={i} opacity={pop}>
+            <circle cx={c.x} cy={c.y} r={10} fill={LINE} />
+            <text x={c.x} y={c.y - 26} fill="#fff" fontSize={36} fontWeight={800} textAnchor="middle">
+              {c.p.value}
+              {spec.unit ?? ""}
+            </text>
+            <text x={c.x} y={H - PAD + 44} fill={TEXT} fontSize={32} textAnchor="middle">
+              {c.p.label}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+};
