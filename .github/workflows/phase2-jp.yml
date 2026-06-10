@@ -1,14 +1,17 @@
 name: phase2-jp
 
-# Phase 2 (2a) JP-equity data layer: J-Quants v2 + ラジ株ナビ MCP -> CompanyProfile.
-# Proves the fetch end-to-end in CI (the only execution host, see SPEC/AGENTS)
-# and uploads the profile JSON as an artifact. Runs on push to the feature
-# branch (proving) and on demand (workflow_dispatch needs this file on the
-# default branch first). Downstream 2c/2d/2e are added later.
+# Phase 2 JP-equity long-form pipeline, proven end-to-end in CI (the only
+# execution host, see SPEC/AGENTS):
+#   2a fetch  — J-Quants v2 + ラジ株ナビ MCP -> CompanyProfile (LLM-free numbers)
+#   2c script — CompanyProfile -> long-form ContentPackage via Gemini (prose only)
+#   gate      — validate (schema) + compliance (§2: zero prohibited phrases)
+# Uploads both the profile and the gated ContentPackage as artifacts. Runs on
+# push to the feature branch (proving) and on demand (workflow_dispatch needs
+# this file on the default branch first). Downstream 2d/2e are added later.
 
 on:
   push:
-    branches: [feat/phase2-jp-fetch]
+    branches: [feat/phase2-jp-fetch, feat/phase2-jp-script-gen]
   workflow_dispatch:
     inputs:
       codes:
@@ -40,4 +43,18 @@ jobs:
         with:
           name: jp-company-profiles
           path: outputs/equities/*.json
+          if-no-files-found: error
+      - name: 2c Generate long-form ContentPackage (Gemini, numbers code-fixed)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
+        run: npm run generate:jp -- ${{ github.event.inputs.codes || '7203' }}
+      - name: Gate (validate + §2 compliance) — fail stops publish
+        run: npm run check -- $(ls outputs/content/*.json)
+      - name: Show ContentPackage
+        run: cat outputs/content/*.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jp-content-packages
+          path: outputs/content/*.json
           if-no-files-found: error
