@@ -31,7 +31,9 @@ jobs:
       SYMBOL: ${{ github.event.inputs.symbol || 'NVDA' }}
     services:
       voicevox:
-        image: voicevox/voicevox_engine:cpu-latest
+        # Pin to the same engine version as the NAS (0.25.2) so the speaker-id
+        # mapping matches (speaker 2 = 四国めたん ノーマル). No `cpu-latest` tag exists.
+        image: voicevox/voicevox_engine:cpu-0.25.2
         ports:
           - 50021:50021
     steps:
