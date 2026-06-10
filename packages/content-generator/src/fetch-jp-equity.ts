@@ -11,7 +11,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { type CompanyProfile, operatingMargin } from "@ics/shared";
+import { type CompanyProfile, operatingMargin, type PeerComparison, type PeerMetric } from "@ics/shared";
 
 try {
   process.loadEnvFile();
@@ -24,6 +24,8 @@ const JQ_BASE = "https://api.jquants.com/v2";
 const JQ_KEY = process.env.JQUANTS_API_KEY;
 const MCP_URL = "https://radikabunavi.com/mcp";
 const MCP_KEY = process.env.RADIKABUNAVI_API_KEY;
+const EDB_BASE = "https://edinetdb.jp/v1";
+const EDB_KEY = process.env.EDINETDB_API_KEY;
 const OUT_DIR = resolve(HERE, "../../../outputs/equities");
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -90,6 +92,103 @@ async function mcpCall<T>(name: string, args: Record<string, unknown>): Promise<
   return JSON.parse(text) as T;
 }
 
+// ── edinetdb.jp (REST; supplementary same-industry averages) ─────────────
+// Supplies ONLY the industry average for each metric; the company's own values
+// are reused from the ラジ株ナビ profile so the video stays internally
+// consistent. Null on any failure (free 100/day budget; supplementary source).
+async function edb<T>(path: string): Promise<T | null> {
+  if (!EDB_KEY) return null;
+  try {
+    const res = await fetch(`${EDB_BASE}/${path}`, { headers: { "X-API-Key": EDB_KEY } });
+    if (!res.ok) {
+      console.log(`    edinetdb /${path} -> HTTP ${res.status}`);
+      return null;
+    }
+    return (await res.json()) as T;
+  } catch (e) {
+    console.log(`    edinetdb /${path} -> ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
+}
+
+const norm = (s: string): string => s.normalize("NFKC").replace(/\s+/g, "").trim();
+const lk = (k: string): string => k.toLowerCase().replace(/[-_\s]/g, "");
+
+/** First finite number under any candidate key (normalized) of a flat object. */
+function readNum(bag: Record<string, unknown> | null, keys: string[]): number | null {
+  if (!bag) return null;
+  const want = new Set(keys.map(lk));
+  for (const [k, v] of Object.entries(bag)) {
+    if (want.has(lk(k)) && typeof v === "number" && Number.isFinite(v)) return v;
+  }
+  return null;
+}
+
+/** First array found at top level or under any envelope key (data/items/results/…). */
+function firstArray(x: unknown): Record<string, unknown>[] {
+  if (Array.isArray(x)) return x as Record<string, unknown>[];
+  if (x && typeof x === "object") {
+    for (const v of Object.values(x as Record<string, unknown>)) if (Array.isArray(v)) return v as Record<string, unknown>[];
+  }
+  return [];
+}
+const rowName = (r: Record<string, unknown>): string =>
+  String(r.name_ja ?? r.name ?? r.label ?? r.industry ?? r.japanese_name ?? r.industry_name ?? "");
+const rowSlug = (r: Record<string, unknown>): string => {
+  const s = r.slug ?? r.code ?? r.id ?? r.key;
+  return s != null ? String(s) : "";
+};
+
+/**
+ * Same-industry comparison via edinetdb. The `/v1/industries` LIST rows already
+ * carry the aggregates we need (avg_operating_margin / avg_roe / avg_revenue /
+ * company_count), so ONE request covers it — the per-industry detail endpoint
+ * returns member companies (not averages) and is not used. Resolves the sector
+ * (J-Quants 33業種 日本語名) to its row by name, then pairs each industry
+ * average with the company's own value (from ラジ株ナビ, so both sides agree).
+ * §2-safe: facts only, no rival tickers named. Returns null if unavailable.
+ */
+async function fetchPeerComparison(
+  sector: string | null,
+  own: { operatingMargin: number | null; roe: number | null; netSales: number | null },
+): Promise<PeerComparison | null> {
+  if (!EDB_KEY || !sector) return null;
+  const rows = firstArray(await edb<unknown>("industries"));
+  if (!rows.length) {
+    console.log("    edinetdb: /industries returned no rows — skipping peer comparison");
+    return null;
+  }
+  const want = norm(sector);
+  const hit =
+    rows.find((r) => rowName(r) && norm(rowName(r)) === want) ??
+    rows.find((r) => rowName(r) && norm(rowName(r)).includes(want));
+  if (!hit) {
+    console.log(`    edinetdb: no industry match for sector "${sector}" (${rows.length} industries)`);
+    return null;
+  }
+  const sample = readNum(hit, ["company_count", "companies_count", "count", "total", "n"]);
+  const metrics = (
+    [
+      { label: "営業利益率", unit: "%", company: own.operatingMargin, industryAverage: readNum(hit, ["avg_operating_margin", "operating_margin"]) },
+      { label: "ROE", unit: "%", company: own.roe, industryAverage: readNum(hit, ["avg_roe", "roe"]) },
+      { label: "売上規模", unit: "円", company: own.netSales, industryAverage: readNum(hit, ["avg_revenue", "avg_net_sales", "revenue"]) },
+    ] satisfies PeerMetric[]
+  ).filter((m) => m.industryAverage != null);
+  if (metrics.length === 0) {
+    console.log(`    edinetdb: industry "${rowName(hit)}" had no usable average fields — skipping`);
+    return null;
+  }
+  const slug = rowSlug(hit);
+  console.log(`    edinetdb: ${sector} -> ${rowName(hit)} (n=${sample}); ${metrics.map((m) => `${m.label}平均${m.industryAverage}`).join(" ")}`);
+  return {
+    industry: rowName(hit) || sector,
+    industrySlug: slug,
+    sampleSize: sample,
+    metrics,
+    source: { label: "edinetdb.jp（業種平均・EDINET 集計）", url: slug ? `https://edinetdb.jp/industries/${slug}` : "https://edinetdb.jp/" },
+  };
+}
+
 type FyRow = Record<string, unknown> & { netSales?: number; operatingIncome?: number };
 
 async function buildProfile(code: string): Promise<CompanyProfile> {
@@ -118,6 +217,14 @@ async function buildProfile(code: string): Promise<CompanyProfile> {
 
   const price = JQ_KEY ? await jqLatestClose(code) : null;
 
+  const ownMargin = num(fy.operatingMargin) ?? operatingMargin(num(fy.operatingIncome), num(fy.netSales));
+  const ownPer = num(fy.per) ?? num(fy.priceEarningsRatio);
+  const peerComparison = await fetchPeerComparison(m.S33Nm ?? null, {
+    operatingMargin: ownMargin,
+    roe: num(fy.roe),
+    netSales: num(fy.netSales),
+  });
+
   return {
     code,
     companyName: fin.companyName ?? m.CoName ?? code,
@@ -131,7 +238,7 @@ async function buildProfile(code: string): Promise<CompanyProfile> {
       fiscalYearEnd: latestKey,
       netSales: num(fy.netSales),
       operatingIncome: num(fy.operatingIncome),
-      operatingMargin: num(fy.operatingMargin) ?? operatingMargin(num(fy.operatingIncome), num(fy.netSales)),
+      operatingMargin: ownMargin,
       netIncome: num(fy.netIncome),
       roe: num(fy.roe),
       equityRatio: num(fy.equityRatio),
@@ -140,7 +247,7 @@ async function buildProfile(code: string): Promise<CompanyProfile> {
       payoutRatio: num(fy.payoutRatio),
       eps: num(fy.eps),
     },
-    valuation: { per: num(fy.per) ?? num(fy.priceEarningsRatio), pbr: num(fy.pbr) },
+    valuation: { per: ownPer, pbr: num(fy.pbr) },
     revenueTrend: trend,
     segments: seg.map((s) => ({ name: s.segmentName ?? "", sales: num(s.sales), operatingIncome: num(s.operatingIncome) })),
     latestReport: a
@@ -155,11 +262,13 @@ async function buildProfile(code: string): Promise<CompanyProfile> {
           changeNetIncome: num(a.changeNetIncome),
         }
       : null,
+    peerComparison,
     price,
     sources: [
       { label: "J-Quants（東証 上場・株価データ）", url: "https://jpx-jquants.com/" },
       { label: "ラジ株ナビ（EDINET 有報・TDnet 短信ベース財務）", url: "https://radikabunavi.com/" },
       ...(fy.edinetFilingUrl ? [{ label: "EDINET 有価証券報告書", url: String(fy.edinetFilingUrl) }] : []),
+      ...(peerComparison ? [peerComparison.source] : []),
     ],
   };
 }
@@ -178,7 +287,7 @@ async function main(): Promise<void> {
       wrote++;
       const f = p.financials;
       console.log(
-        `  ${code} ${p.companyName} [${p.sector}] 売上${f.netSales}/営利${f.operatingIncome} (率${f.operatingMargin?.toFixed(1)}%) PER${p.valuation.per}/PBR${p.valuation.pbr} 推移${p.revenueTrend.length}期 seg${p.segments.length} 株価${p.price?.close ?? "n/a"}`,
+        `  ${code} ${p.companyName} [${p.sector}] 売上${f.netSales}/営利${f.operatingIncome} (率${f.operatingMargin?.toFixed(1)}%) PER${p.valuation.per}/PBR${p.valuation.pbr} 推移${p.revenueTrend.length}期 seg${p.segments.length} 株価${p.price?.close ?? "n/a"} peer${p.peerComparison ? `(${p.peerComparison.metrics.filter((mt) => mt.industryAverage != null).length}/${p.peerComparison.metrics.length}指標)` : "なし"}`,
       );
     } catch (err) {
       console.log(`  ${code}: ${err instanceof Error ? err.message : err}`);

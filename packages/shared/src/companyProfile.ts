@@ -40,6 +40,35 @@ export interface LatestReport {
   changeNetIncome: number | null;
 }
 
+/** One metric in the same-industry comparison (depth lever 2: peer/market). */
+export interface PeerMetric {
+  /** Display label, e.g. "営業利益率". */
+  label: string;
+  /** Unit suffix shown on values, e.g. "%" or "倍". */
+  unit: string;
+  /** This company's value. */
+  company: number | null;
+  /** Industry average for the same metric (edinetdb 業種平均). */
+  industryAverage: number | null;
+}
+
+/**
+ * Same-industry comparison sourced from edinetdb.jp (supplementary; null when
+ * the sector can't be matched or the free 100/day budget is exhausted). The
+ * comparison is shown as facts only — company value vs industry average — which
+ * is §2-safe (no buy/sell verdict, no naming of rival tickers).
+ */
+export interface PeerComparison {
+  /** edinetdb industry name (日本語, e.g. "輸送用機器"). */
+  industry: string;
+  /** edinetdb industry slug used for the lookup, e.g. "transportation-equipment". */
+  industrySlug: string;
+  /** Number of companies in the industry sample (context for the average). */
+  sampleSize: number | null;
+  metrics: PeerMetric[];
+  source: { label: string; url: string };
+}
+
 export interface CompanyProfile {
   /** 4-digit TSE code, e.g. "7203". */
   code: string;
@@ -89,6 +118,9 @@ export interface CompanyProfile {
 
   /** Latest TDnet 短信 figures (may be a more recent year than 有報). */
   latestReport: LatestReport | null;
+
+  /** Same-industry comparison (edinetdb.jp; null when unavailable). */
+  peerComparison: PeerComparison | null;
 
   /** TSE-official market price (J-Quants free is ~12 weeks delayed). */
   price: {
