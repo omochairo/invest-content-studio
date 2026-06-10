@@ -99,31 +99,62 @@ async function radikabunavi(): Promise<void> {
     console.log(`    inputSchema: ${preview(t.inputSchema)}`);
   }
 
-  // Confirmed tool names (from tools/list above). Dump fuller output so we can
-  // see the real financial field structure for Toyota.
-  const attempts: { tool: string; args: Record<string, unknown>; cap: number }[] = [
-    { tool: "get_edinet_financial_data", args: { code: CODE4 }, cap: 3000 },
-    { tool: "get_earnings_forecast", args: { code: CODE4 }, cap: 2000 },
-    { tool: "get_ideal_price", args: { code: CODE4 }, cap: 1500 },
-    { tool: "get_stock_score", args: { code: CODE4 }, cap: 1500 },
-  ];
-  for (const a of attempts) {
-    if (!tools.some((t) => t.name === a.tool)) {
-      console.log(`\n[RKN] ${a.tool}: NOT in catalog, skipped`);
-      continue;
+  async function call(tool: string, args: Record<string, unknown>): Promise<unknown> {
+    const r = (await mcp("tools/call", { name: tool, arguments: args })) as {
+      content?: { type: string; text?: string }[];
+    };
+    const text = (r.content ?? [])
+      .filter((c) => c.type === "text")
+      .map((c) => c.text ?? "")
+      .join("\n");
+    if (text) {
+      try {
+        return JSON.parse(text);
+      } catch {
+        return text;
+      }
     }
+    return r; // non-text payload — dump raw so we can see what came back
+  }
+
+  // 1) Full field map of the LATEST fiscal year (the type design needs every key).
+  try {
+    const fin = (await call("get_edinet_financial_data", { code: CODE4 })) as {
+      companyName?: string;
+      metadata?: { latestFiscalYear?: string };
+      fiscalYears?: Record<string, Record<string, unknown>>;
+    };
+    const latest = fin.metadata?.latestFiscalYear ?? "";
+    const fy = fin.fiscalYears?.[latest];
+    console.log(`\n[RKN] get_edinet_financial_data: company=${fin.companyName} latestFY=${latest}`);
+    console.log(`     all FY keys: ${Object.keys(fin.fiscalYears ?? {}).join(", ")}`);
+    if (fy) {
+      console.log(`     latest FY field count: ${Object.keys(fy).length}`);
+      for (const [k, v] of Object.entries(fy)) console.log(`       ${k} = ${preview(v)}`);
+    }
+  } catch (err) {
+    console.log(`\n[RKN] get_edinet_financial_data -> ERROR ${err instanceof Error ? err.message : err}`);
+  }
+
+  // 2) Does metrics=[ratios] return per/pbr/equityRatio/roe directly?
+  try {
+    const m = await call("get_edinet_financial_data", {
+      code: CODE4,
+      metrics: ["per", "pbr", "equityRatio", "roe", "operatingMargin", "dividendYield"],
+    });
+    console.log(`\n[RKN] get_edinet_financial_data(metrics) ->\n${preview(m)}`);
+  } catch (err) {
+    console.log(`\n[RKN] get_edinet(metrics) -> ERROR ${err instanceof Error ? err.message : err}`);
+  }
+
+  // 3) earnings_forecast + the two proprietary tools (raw, to see why they were empty).
+  for (const tool of ["get_earnings_forecast", "get_ideal_price", "get_stock_score"]) {
     try {
-      const r = (await mcp("tools/call", { name: a.tool, arguments: a.args })) as {
-        content?: { type: string; text?: string }[];
-      };
-      const text = (r.content ?? [])
-        .filter((c) => c.type === "text")
-        .map((c) => c.text ?? "")
-        .join("\n");
-      const out = text || JSON.stringify(r);
-      console.log(`\n[RKN] ${a.tool}(${JSON.stringify(a.args)}) ->\n${out.slice(0, a.cap)}${out.length > a.cap ? "…[truncated]" : ""}`);
+      const r = await call(tool, { code: CODE4 });
+      const s = typeof r === "string" ? r : JSON.stringify(r);
+      console.log(`\n[RKN] ${tool} ->\n${s.slice(0, 1800)}${s.length > 1800 ? "…[truncated]" : ""}`);
     } catch (err) {
-      console.log(`\n[RKN] ${a.tool} -> ERROR ${err instanceof Error ? err.message : err}`);
+      console.log(`\n[RKN] ${tool} -> ERROR ${err instanceof Error ? err.message : err}`);
     }
   }
 }
