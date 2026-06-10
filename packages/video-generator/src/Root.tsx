@@ -49,8 +49,10 @@ export const RemotionRoot = () => {
           };
         }}
       />
-      {/* Long-form (16:9) explainer — Phase 2 (#5). Mock sized by estimate
-          until the JP data + TTS layers exist (manifest stays null). */}
+      {/* Long-form (16:9) explainer — Phase 2 (#5). Audio-duration-driven, same
+          as MarketRecap: TTS writes audio/manifest.json, and total length is the
+          sum of each scene's clip (matched by narrationIndex) + padding. Falls
+          back to an estimate in the studio before TTS has run. */}
       <Composition
         id="LongFormExplainer"
         component={LongFormExplainer}
@@ -59,9 +61,27 @@ export const RemotionRoot = () => {
         fps={FPS}
         durationInFrames={300}
         defaultProps={{ pkg: longFormSample as ContentPackage, manifest: null }}
-        calculateMetadata={({ props }) => ({
-          durationInFrames: Math.max(props.pkg.scenes.length * sceneFrames(EST_MS), 1),
-        })}
+        calculateMetadata={async ({ props }) => {
+          let manifest: AudioManifest | null = null;
+          try {
+            const res = await fetch(staticFile("audio/manifest.json"));
+            if (res.ok) manifest = (await res.json()) as AudioManifest;
+          } catch {
+            manifest = null;
+          }
+          // Mirror the composition's scene<->clip binding so the timeline length
+          // matches what LongFormExplainer actually lays out (Series.Sequence).
+          const clipFor = (narrationIndex: number) =>
+            manifest?.clips.find((c) => c.index === narrationIndex);
+          const durationInFrames = props.pkg.scenes.reduce(
+            (sum, s) => sum + sceneFrames(clipFor(s.narrationIndex)?.durationMs ?? EST_MS),
+            0,
+          );
+          return {
+            durationInFrames: Math.max(durationInFrames, 1),
+            props: { ...props, manifest },
+          };
+        }}
       />
     </>
   );
