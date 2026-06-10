@@ -5,19 +5,27 @@ name: phase2-jp
 #   2a fetch  — J-Quants v2 + ラジ株ナビ MCP -> CompanyProfile (LLM-free numbers)
 #   2c script — CompanyProfile -> long-form ContentPackage via Gemini (prose only)
 #   gate      — validate (schema) + compliance (§2: zero prohibited phrases)
-# Uploads both the profile and the gated ContentPackage as artifacts. Runs on
-# push to the feature branch (proving) and on demand (workflow_dispatch needs
-# this file on the default branch first). Downstream 2d/2e are added later.
+#   2e TTS+render — VOICEVOX (docker service) -> Remotion LongFormExplainer mp4
+# Uploads the profile, the gated ContentPackage, and the long-form mp4 as
+# artifacts. VOICEVOX runs as a service container so CI is self-contained (the
+# NAS engine is unreachable from cloud runners). Runs on push to the feature
+# branch (proving) and on demand (workflow_dispatch needs this file on the
+# default branch first). The heavy TTS+render stage renders the FIRST code only
+# (long-form is costly) and can be skipped with the `render: false` dispatch input.
 
 on:
   push:
-    branches: [feat/phase2-jp-fetch, feat/phase2-jp-script-gen]
+    branches: [feat/phase2-jp-fetch, feat/phase2-jp-script-gen, feat/phase2-jp-tts-render]
   workflow_dispatch:
     inputs:
       codes:
         description: "TSE codes (space-separated), e.g. 7203 6758"
         default: "7203"
         required: true
+      render:
+        description: "Run the heavy TTS+render stage (first code only)"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -25,6 +33,13 @@ permissions:
 jobs:
   jp-profile:
     runs-on: ubuntu-22.04
+    services:
+      voicevox:
+        # Same engine version as the NAS (0.25.2) so speaker 2 (四国めたん ノーマル)
+        # matches. No `cpu-latest` tag exists. Used by the 2e TTS step below.
+        image: voicevox/voicevox_engine:cpu-0.25.2
+        ports:
+          - 50021:50021
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,6 +47,14 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - name: Install Chromium runtime deps (Remotion render)
+        if: ${{ github.event.inputs.render != 'false' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libasound2 \
+            libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
+            libatk-bridge2.0-0 libcups2 libpango-1.0-0 libcairo2
       - name: 2a Fetch CompanyProfile (J-Quants + ラジ株ナビ)
         env:
           JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}
@@ -57,4 +80,56 @@ jobs:
         with:
           name: jp-content-packages
           path: outputs/content/*.json
+          if-no-files-found: error
+
+      # ── 2e TTS + render (first code only; long-form is costly) ──────────────
+      - name: Pick primary code (first token)
+        if: ${{ github.event.inputs.render != 'false' }}
+        run: echo "CODE=$(echo '${{ github.event.inputs.codes || '7203' }}' | awk '{print $1}')" >> "$GITHUB_ENV"
+      - name: Wait for VOICEVOX engine
+        if: ${{ github.event.inputs.render != 'false' }}
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:50021/version; then
+              echo "VOICEVOX ready"; exit 0
+            fi
+            echo "waiting for VOICEVOX... ($i)"; sleep 5
+          done
+          echo "VOICEVOX did not become ready"; exit 1
+      - name: 2e TTS (VOICEVOX, speaker 2)
+        if: ${{ github.event.inputs.render != 'false' }}
+        env:
+          VOICEVOX_URL: http://localhost:50021
+        run: npm run tts -- "outputs/content/$CODE.json"
+      - name: 2e Render long-form mp4 (Remotion LongFormExplainer, 1920x1080)
+        if: ${{ github.event.inputs.render != 'false' }}
+        working-directory: packages/video-generator
+        run: |
+          npx remotion render src/index.ts LongFormExplainer "out/$CODE.mp4" \
+            --props="$GITHUB_WORKSPACE/outputs/content/$CODE.json"
+      - name: Report rendered duration / size
+        if: ${{ github.event.inputs.render != 'false' }}
+        run: |
+          f="packages/video-generator/out/$CODE.mp4"
+          ls -lh "$f"
+          # Derive length from the audio manifest (no ffprobe dependency on the
+          # runner): the video is exactly the sum of clip durations + padding.
+          python3 - "packages/video-generator/public/audio/manifest.json" <<'PY'
+          import json, sys, math
+          PAD_MS, FPS = 350, 30
+          m = json.load(open(sys.argv[1], encoding="utf-8"))
+          clips = m["clips"]
+          frames = sum(max(1, math.ceil(((c["durationMs"] + PAD_MS) / 1000) * FPS)) for c in clips)
+          print(f"clips={len(clips)} frames={frames} duration={frames/FPS:.1f}s "
+                f"(audio {sum(c['durationMs'] for c in clips)/1000:.1f}s + {PAD_MS}ms/scene pad)")
+          PY
+      - name: Upload long-form mp4 artifact
+        if: ${{ github.event.inputs.render != 'false' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: jp-longform-${{ env.CODE }}-mp4
+          path: |
+            packages/video-generator/out/${{ env.CODE }}.mp4
+            outputs/content/${{ env.CODE }}.json
+            packages/video-generator/public/audio/manifest.json
           if-no-files-found: error
