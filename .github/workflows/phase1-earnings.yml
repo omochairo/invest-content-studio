@@ -61,11 +61,6 @@ jobs:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
         run: npm run fetch -- "$SYMBOL"
 
-      - name: TEMP Gemini model probe (remove after model chosen)
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: npm run probe:gemini
-
       - name: 1b Generate ContentPackage (Gemini Flash)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

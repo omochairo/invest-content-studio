@@ -9,7 +9,8 @@
  * has its required elements. On a §2.1 prohibited-phrase hit we retry once with
  * the violation fed back, then fail hard (AGENTS.md §5/§6: never publish).
  *
- * Env: GEMINI_API_KEY (required), GEMINI_MODEL (default gemini-2.0-flash)
+ * Env: GEMINI_API_KEY (required), GEMINI_MODEL (default gemini-2.5-flash —
+ *   2.0-flash has free-tier quota 0 on current keys; 2.5-flash is the free workhorse)
  * Run from repo root: `npm run generate -- NVDA`  (reads outputs/earnings/NVDA.json)
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -36,7 +37,7 @@ const ROOT = resolve(HERE, "../../..");
 const IN_DIR = resolve(ROOT, "outputs/earnings");
 const OUT_DIR = resolve(ROOT, "outputs/content");
 const KEY = process.env.GEMINI_API_KEY;
-const MODEL = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
+const MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 
 const DISCLAIMER =
   "本コンテンツは情報提供を目的としたもので、特定の金融商品の売買を推奨・勧誘するものではありません。投資判断はご自身の責任で行ってください。";
