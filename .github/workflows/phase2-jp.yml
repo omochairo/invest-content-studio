@@ -1,0 +1,43 @@
+name: phase2-jp
+
+# Phase 2 (2a) JP-equity data layer: J-Quants v2 + ラジ株ナビ MCP -> CompanyProfile.
+# Proves the fetch end-to-end in CI (the only execution host, see SPEC/AGENTS)
+# and uploads the profile JSON as an artifact. Runs on push to the feature
+# branch (proving) and on demand (workflow_dispatch needs this file on the
+# default branch first). Downstream 2c/2d/2e are added later.
+
+on:
+  push:
+    branches: [feat/phase2-jp-fetch]
+  workflow_dispatch:
+    inputs:
+      codes:
+        description: "TSE codes (space-separated), e.g. 7203 6758"
+        default: "7203"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  jp-profile:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: 2a Fetch CompanyProfile (J-Quants + ラジ株ナビ)
+        env:
+          JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}
+          RADIKABUNAVI_API_KEY: ${{ secrets.RADIKABUNAVI_API_KEY }}
+        run: npm run fetch:jp -- ${{ github.event.inputs.codes || '7203' }}
+      - name: Show profile
+        run: cat outputs/equities/*.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jp-company-profiles
+          path: outputs/equities/*.json
+          if-no-files-found: error
