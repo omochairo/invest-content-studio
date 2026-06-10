@@ -1,0 +1,23 @@
+{
+  "description": "Phase 1 mega-cap watchlist for US earnings coverage. Keep curated to control volume, cost, and quality.",
+  "symbols": [
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "GOOGL",
+    "AMZN",
+    "META",
+    "TSLA",
+    "AVGO",
+    "AMD",
+    "NFLX",
+    "JPM",
+    "V",
+    "WMT",
+    "COST",
+    "DIS",
+    "KO",
+    "PEP",
+    "MCD"
+  ]
+}

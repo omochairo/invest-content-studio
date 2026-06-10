@@ -11,7 +11,10 @@
  *                     e.g. http://<NAS-IP>:50021 when running on the NAS Docker
  *   VOICEVOX_SPEAKER  speaker id (default 2 = 四国めたん ノーマル)
  *
- * Run from repo root: `npm run tts`
+ * Input ContentPackage: first CLI arg, else $CONTENT_PACKAGE, else the phase0
+ * sample. (Phase 1 passes a generated outputs/content/<SYM>.json.)
+ *
+ * Run from repo root: `npm run tts` or `npm run tts -- outputs/content/NVDA.json`
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { readFile } from "node:fs/promises";
@@ -27,7 +30,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const BASE = (process.env.VOICEVOX_URL ?? "http://localhost:50021").replace(/\/$/, "");
 const SPEAKER = Number(process.env.VOICEVOX_SPEAKER ?? "2");
 
-const INPUT = resolve(HERE, "../../shared/samples/market-recap.json");
+const SAMPLE = resolve(HERE, "../../shared/samples/market-recap.json");
+const INPUT = process.argv[2] ?? process.env.CONTENT_PACKAGE ?? SAMPLE;
 const OUT_DIR = resolve(HERE, "../../video-generator/public/audio");
 
 /** Parse a canonical PCM WAV header to compute playback duration (ms). */
