@@ -25,7 +25,9 @@ try {
 }
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const API = "https://financialmodelingprep.com/api/v3";
+// FMP "stable" API. Legacy /api/v3 returns 403 for keys issued after
+// 2025-08-31; the stable endpoints take ?symbol= as a query param.
+const API = "https://financialmodelingprep.com/stable";
 const KEY = process.env.FMP_API_KEY;
 const OUT_DIR = resolve(HERE, "../../../outputs/earnings");
 
@@ -38,57 +40,59 @@ async function fmp<T>(path: string): Promise<T> {
 
 type EarnRow = {
   date: string;
-  eps: number | null;
+  epsActual: number | null;
   epsEstimated: number | null;
-  revenue: number | null;
+  revenueActual: number | null;
   revenueEstimated: number | null;
 };
-type Filing = { fillingDate: string; finalLink: string };
+
+/** SEC EDGAR 8-K filings page for a company (primary source, no key needed). */
+function edgarUrl(cik: string | null | undefined): string | null {
+  if (!cik) return null;
+  const padded = cik.replace(/\D/g, "").padStart(10, "0");
+  return `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${padded}&type=8-K&dateb=&owner=include&count=10`;
+}
 
 async function buildEvent(symbol: string): Promise<EarningsEvent | null> {
-  const [history, profile, quote] = await Promise.all([
-    fmp<EarnRow[]>(`/historical/earning_calendar/${symbol}`),
-    fmp<{ companyName: string }[]>(`/profile/${symbol}`),
-    fmp<{ changesPercentage: number; price: number }[]>(`/quote/${symbol}`),
+  const [earnings, profile, quote] = await Promise.all([
+    fmp<EarnRow[]>(`/earnings?symbol=${symbol}`),
+    fmp<{ companyName: string; cik: string }[]>(`/profile?symbol=${symbol}`),
+    fmp<{ changePercentage: number; price: number }[]>(`/quote?symbol=${symbol}`),
   ]);
 
-  const latest = history.find((r) => r.eps != null);
+  // The endpoint mixes upcoming (null actuals) and reported rows; the most
+  // recent reported result is the one with a non-null actual EPS.
+  const reported = earnings
+    .filter((r) => r.epsActual != null)
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const latest = reported[0];
   if (!latest) return null;
 
-  const epsSurprise = surprisePct(latest.eps, latest.epsEstimated);
-  const revSurprise = surprisePct(latest.revenue, latest.revenueEstimated);
-
-  // Nearest 8-K filing on/after the report date is the primary source.
-  let secFilingUrl: string | null = null;
-  try {
-    const filings = await fmp<Filing[]>(`/sec_filings/${symbol}?type=8-K&page=0`);
-    secFilingUrl =
-      filings.find((f) => f.fillingDate >= latest.date)?.finalLink ??
-      filings[0]?.finalLink ??
-      null;
-  } catch {
-    secFilingUrl = null;
-  }
-
+  const epsSurprise = surprisePct(latest.epsActual, latest.epsEstimated);
+  const revSurprise = surprisePct(latest.revenueActual, latest.revenueEstimated);
   const q = quote[0];
+
   return {
     symbol,
     companyName: profile[0]?.companyName ?? symbol,
     fiscalPeriod: `${latest.date.slice(0, 7)} 決算`,
     reportDate: latest.date,
     epsVerdict: epsVerdict(epsSurprise),
-    eps: { actual: latest.eps, estimate: latest.epsEstimated, surprisePct: epsSurprise },
+    eps: { actual: latest.epsActual, estimate: latest.epsEstimated, surprisePct: epsSurprise },
     revenue: {
-      actual: latest.revenue,
+      actual: latest.revenueActual,
       estimate: latest.revenueEstimated,
       surprisePct: revSurprise,
     },
+    // NOTE: FMP free plan lacks historical EOD around the report date, so this
+    // is the latest daily move (a context proxy), not the report-day reaction.
+    // True post-earnings reaction is a follow-up (needs historical EOD / EDGAR).
     priceReaction: {
       close: q?.price ?? null,
-      changePct: q?.changesPercentage ?? null,
+      changePct: q?.changePercentage ?? null,
       asOf: new Date().toISOString().slice(0, 10),
     },
-    source: { provider: "FMP", secFilingUrl },
+    source: { provider: "FMP", secFilingUrl: edgarUrl(profile[0]?.cik) },
   };
 }
 
@@ -103,6 +107,7 @@ async function main(): Promise<void> {
 
   await mkdir(OUT_DIR, { recursive: true });
   console.log(`FMP earnings: ${list.length} symbol(s)`);
+  let wrote = 0;
   for (const symbol of list) {
     try {
       const ev = await buildEvent(symbol);
@@ -111,6 +116,7 @@ async function main(): Promise<void> {
         continue;
       }
       await writeFile(resolve(OUT_DIR, `${symbol}.json`), JSON.stringify(ev, null, 2));
+      wrote++;
       const e = ev.eps.surprisePct?.toFixed(1) ?? "n/a";
       const r = ev.revenue.surprisePct?.toFixed(1) ?? "n/a";
       const p = ev.priceReaction.changePct?.toFixed(1) ?? "n/a";
@@ -121,7 +127,9 @@ async function main(): Promise<void> {
       console.log(`  ${symbol}: ${err instanceof Error ? err.message : err}`);
     }
   }
-  console.log(`-> ${OUT_DIR}`);
+  console.log(`-> ${OUT_DIR} (${wrote}/${list.length} written)`);
+  // Fail loudly so CI stops here instead of at a downstream ENOENT.
+  if (wrote === 0) throw new Error("no EarningsEvent written (all symbols failed)");
 }
 
 main().catch((err) => {

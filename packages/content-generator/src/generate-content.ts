@@ -50,7 +50,7 @@ function buildChart(ev: EarningsEvent): Asset {
   const bars = [
     { label: "EPS 予想比", value: ev.eps.surprisePct },
     { label: "売上 予想比", value: ev.revenue.surprisePct },
-    { label: "株価反応", value: ev.priceReaction.changePct },
+    { label: "株価 本日比", value: ev.priceReaction.changePct },
   ].filter((b): b is { label: string; value: number } => b.value != null);
   return { id: "reaction", type: "chart", spec: { kind: "bar", unit: "%", bars } };
 }
@@ -92,7 +92,7 @@ function buildPrompt(ev: EarningsEvent, retryNote = ""): string {
     `EPS判定: ${verdictJa(ev.epsVerdict)}`,
     `EPS 予想比サプライズ: ${pct(ev.eps.surprisePct)}（実績 ${ev.eps.actual ?? "不明"} / 予想 ${ev.eps.estimate ?? "不明"}）`,
     `売上 予想比サプライズ: ${pct(ev.revenue.surprisePct)}`,
-    `開示後の株価反応: ${pct(ev.priceReaction.changePct)}（終値 ${ev.priceReaction.close ?? "不明"}, ${ev.priceReaction.asOf ?? ""}）`,
+    `足元の株価変動(本日比): ${pct(ev.priceReaction.changePct)}（終値 ${ev.priceReaction.close ?? "不明"}, ${ev.priceReaction.asOf ?? ""}）`,
   ].join("\n");
 
   return `あなたは日本語の経済ニュースを読み上げる、中立的な単独ナレーターです。
@@ -112,7 +112,7 @@ ${facts}
 - title: 動画タイトル（社名と「決算速報」を含む簡潔な日本語、誇張なし）。
 - beats: 5〜6個。各 beat は narration（話す1文・自然な口語）/ caption（画面テロップ・短く）/ showChart（その beat でデータ棒グラフを見せるなら true）。
   - 1個目: つかみ（何の決算速報か）。
-  - 中盤に showChart=true の beat をちょうど1つ置き、EPS・売上の予想比と株価反応に言及。
+  - 中盤に showChart=true の beat をちょうど1つ置き、EPS・売上の予想比（beat/miss）と足元の株価変動に言及。
   - 最後の beat: 「数値の詳細と出典は概要欄をご確認ください。投資判断はご自身で。」相当で締める。
 ${retryNote}`;
 }
