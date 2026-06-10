@@ -85,10 +85,11 @@ jobs:
             libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libasound2 \
             libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
             libatk-bridge2.0-0 libcups2 libpango-1.0-0 libcairo2
-      - name: 2a Fetch CompanyProfile (J-Quants + ラジ株ナビ)
+      - name: 2a Fetch CompanyProfile (J-Quants + ラジ株ナビ + edinetdb peer)
         env:
           JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}
           RADIKABUNAVI_API_KEY: ${{ secrets.RADIKABUNAVI_API_KEY }}
+          EDINETDB_API_KEY: ${{ secrets.EDINETDB_API_KEY }}
         run: npm run fetch:jp -- "$CODE"
       - name: Show profile
         run: cat "outputs/equities/$CODE.json"

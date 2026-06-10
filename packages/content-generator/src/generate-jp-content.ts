@@ -14,7 +14,8 @@
  *
  * Depth (anti-thinness) levers baked into the prompt (all §2-safe):
  *   (1) 因果の物語化  — tie the trend / 増収減益 to plausible general drivers.
- *   (2) 時系列比較    — multi-year self time-series (peer/market: 今後 edinetdb).
+ *   (2) 比較で語る    — multi-year self time-series + same-industry average
+ *                       (peer/market) from edinetdb (CompanyProfile.peerComparison).
  *   (3) 構造の可視化  — reportable-segment breakdown (the project's weapon).
  *   (4) 投資家の視点  — general-knowledge education frame (e.g. PBR<1の一般的意味).
  *
@@ -151,6 +152,22 @@ function buildLatestYoy(p: CompanyProfile): Asset | null {
   return { id: "latest-yoy", type: "chart", spec: { kind: "bar", unit: "%", signed: true, bars } };
 }
 
+/** Same-industry comparison: company value vs sector average (lever 2 peer). */
+function buildPeerComparison(p: CompanyProfile): Asset | null {
+  const pc = p.peerComparison;
+  if (!pc) return null;
+  const fmt = (v: number, unit: string) => (unit === "%" ? pct1(v) : `${f1(v)}${unit}`);
+  const items = pc.metrics
+    .filter((m) => m.company != null && m.industryAverage != null)
+    .map((m) => ({
+      label: m.label,
+      value: fmt(m.company as number, m.unit),
+      note: `業種平均 ${fmt(m.industryAverage as number, m.unit)}`,
+    }));
+  if (items.length === 0) return null;
+  return { id: "peers", type: "stats", spec: { kind: "stats", items } };
+}
+
 // ── beat plan: a fixed, code-owned scene<->asset binding ─────────────────
 interface BeatPlan {
   section: string;
@@ -176,6 +193,8 @@ function buildPlan(assets: Asset[]): BeatPlan[] {
     plan.push({ section: "ハイライト", visualRef: "latest-yoy", focus: "最新の決算短信の前年比。増収か減益かの方向性を述べ、その差が生じた一般的背景に触れて因果を物語化する（レバー1）。断定予測はしない。" });
   if (has("valuation"))
     plan.push({ section: "評価", visualRef: "valuation", focus: "PER・PBRを『市場ではこう評価されている』と事実として提示。PBR1倍割れ等は資本効率の改善が期待される水準といった一般論の教育枠で意味づけ（レバー4）。割安/割高の断定や売買の示唆はしない。" });
+  if (has("peers"))
+    plan.push({ section: "同業比較", visualRef: "peers", focus: "主要指標を同じ業種の平均と並べて、この会社が業種内でどの位置にあるかを事実として示す（レバー2＝同業/市場比較）。出典は業種平均データ。優劣の断定や売買の示唆はせず、『業種平均と比べてこうなっている』と中立に述べる。" });
   plan.push({ section: "リスク", visualRef: null, focus: "注意して見るべき一般的論点（為替変動・投資負担・競争環境など）。特定銘柄への売買判断は示さない。" });
   plan.push({ section: "まとめ", visualRef: null, focus: "ここまでをデータ上の人物像として中立に要約。" });
   plan.push({ section: "まとめ", visualRef: null, focus: "『数値の詳細と出典は概要欄をご確認ください。投資判断はご自身で行ってください。』に相当する締め。" });
@@ -207,6 +226,16 @@ function factSheet(p: CompanyProfile): string {
     lines.push(
       `最新の決算短信での実績（${lr.fiscalYearEnd} 締め, 開示 ${lr.disclosedDate ?? "不明"}, 前年同期比）: 売上 ${lr.changeNetSales != null ? signedPct1(lr.changeNetSales) : "不明"} / 営業利益 ${lr.changeOperatingIncome != null ? signedPct1(lr.changeOperatingIncome) : "不明"} / 純利益 ${lr.changeNetIncome != null ? signedPct1(lr.changeNetIncome) : "不明"}`,
     );
+  const pc = p.peerComparison;
+  if (pc) {
+    const pcFmt = (v: number, unit: string) => (unit === "%" ? pct1(v) : `${f1(v)}倍`);
+    const cmp = pc.metrics
+      .filter((m) => m.company != null && m.industryAverage != null)
+      .map((m) => `${m.label} ${pcFmt(m.company as number, m.unit)}（業種平均 ${pcFmt(m.industryAverage as number, m.unit)}）`)
+      .join(" / ");
+    if (cmp)
+      lines.push(`同業比較（業種「${pc.industry}」${pc.sampleSize ? ` ${pc.sampleSize}社` : ""}, 出典 edinetdb.jp）: ${cmp}`);
+  }
   return lines.join("\n");
 }
 
@@ -245,7 +274,7 @@ function buildPrompt(p: CompanyProfile, plan: BeatPlan[], retryNote = ""): strin
 
 # 深掘り（薄さ対策・すべて上記コンプラの範囲内で）
 1. 因果の物語化: 数字の増減を、一般に知られた要因（為替・需要・投資負担など）と結びつけ「データ上は」「一般に」と添えて語る。断定はしない。
-2. 時系列比較: 売上推移など自社の時間変化で語る（他社比較は今回は扱わない）。
+2. 比較で語る: 売上推移など自社の時間変化に加え、同業比較データがある場合は業種平均と並べて立ち位置を中立に示す（優劣の断定はしない）。
 3. 構造の可視化: 事業セグメントなど、数字の内訳・構造を言葉で見せる。
 4. 投資家の視点(教育枠): 指標の一般的な意味を教える（例: PBR1倍割れは資本効率の改善が市場から期待される水準、など一般論）。
 
@@ -315,9 +344,14 @@ function assemble(p: CompanyProfile, assets: Asset[], plan: BeatPlan[], gen: { t
 }
 
 async function generate(p: CompanyProfile): Promise<ContentPackage> {
-  const assets = [buildSegments(p), buildRevTrend(p), buildFinStats(p), buildValuation(p), buildLatestYoy(p)].filter(
-    (a): a is Asset => a !== null,
-  );
+  const assets = [
+    buildSegments(p),
+    buildRevTrend(p),
+    buildFinStats(p),
+    buildValuation(p),
+    buildPeerComparison(p),
+    buildLatestYoy(p),
+  ].filter((a): a is Asset => a !== null);
   const plan = buildPlan(assets);
   let note = "";
   for (let attempt = 1; attempt <= 2; attempt++) {
