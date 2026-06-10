@@ -8,6 +8,7 @@
     "packages/*"
   ],
   "scripts": {
+    "fetch": "tsx packages/content-generator/src/fetch-earnings.ts",
     "tts": "tsx packages/audio-generator/src/synthesize.ts",
     "render": "npm --workspace @ics/video-generator run render",
     "still": "npm --workspace @ics/video-generator run still",
