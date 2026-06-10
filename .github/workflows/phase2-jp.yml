@@ -101,7 +101,7 @@ jobs:
       - name: 2c Generate long-form ContentPackage (Gemini, numbers code-fixed)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash-lite' }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
         run: npm run generate:jp -- "$CODE"
       - name: Gate (validate + §2 compliance) — fail stops publish
         run: npm run check -- "outputs/content/$CODE.json"
