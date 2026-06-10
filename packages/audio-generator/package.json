@@ -1,0 +1,9 @@
+{
+  "name": "@ics/audio-generator",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@ics/shared": "*"
+  }
+}
