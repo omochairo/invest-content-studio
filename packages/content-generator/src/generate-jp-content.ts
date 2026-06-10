@@ -260,21 +260,30 @@ ${beats}
 ${retryNote}`;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function callGemini(prompt: string): Promise<{ title: string; beats: Beat[] }> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA, temperature: 0.6 },
-    }),
+  const body = JSON.stringify({
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA, temperature: 0.6 },
   });
-  if (!res.ok) throw new Error(`Gemini -> HTTP ${res.status}: ${(await res.text()).slice(0, 1500)}`);
-  const data = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Gemini: empty response");
-  return JSON.parse(text) as { title: string; beats: Beat[] };
+  // Gemini's free tier returns transient 429/500/503 under load — back off and retry.
+  for (let attempt = 1; ; attempt++) {
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+    if (res.ok) {
+      const data = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) throw new Error("Gemini: empty response");
+      return JSON.parse(text) as { title: string; beats: Beat[] };
+    }
+    const retryable = res.status === 429 || res.status === 500 || res.status === 503;
+    const detail = (await res.text()).slice(0, 1500);
+    if (!retryable || attempt >= 4) throw new Error(`Gemini -> HTTP ${res.status}: ${detail}`);
+    const wait = 2000 * attempt;
+    console.log(`  Gemini HTTP ${res.status} (attempt ${attempt}/3) — retrying in ${wait}ms`);
+    await sleep(wait);
+  }
 }
 
 function buildSources(p: CompanyProfile): Source[] {
