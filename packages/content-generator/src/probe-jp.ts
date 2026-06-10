@@ -99,15 +99,19 @@ async function radikabunavi(): Promise<void> {
     console.log(`    inputSchema: ${preview(t.inputSchema)}`);
   }
 
-  // Try the two we expect to need, with a couple of plausible arg shapes.
-  const attempts: { tool: string; args: Record<string, unknown> }[] = [
-    { tool: "get_key_ratios", args: { query: `${CODE4} ROE PER PBR 配当利回り 自己資本比率` } },
-    { tool: "get_key_ratios", args: { code: CODE4 } },
-    { tool: "get_financials", args: { query: `${CODE4} 売上 営業利益 純利益 自己資本` } },
-    { tool: "get_financials", args: { code: CODE4 } },
+  // Confirmed tool names (from tools/list above). Dump fuller output so we can
+  // see the real financial field structure for Toyota.
+  const attempts: { tool: string; args: Record<string, unknown>; cap: number }[] = [
+    { tool: "get_edinet_financial_data", args: { code: CODE4 }, cap: 3000 },
+    { tool: "get_earnings_forecast", args: { code: CODE4 }, cap: 2000 },
+    { tool: "get_ideal_price", args: { code: CODE4 }, cap: 1500 },
+    { tool: "get_stock_score", args: { code: CODE4 }, cap: 1500 },
   ];
   for (const a of attempts) {
-    if (!tools.some((t) => t.name === a.tool)) continue;
+    if (!tools.some((t) => t.name === a.tool)) {
+      console.log(`\n[RKN] ${a.tool}: NOT in catalog, skipped`);
+      continue;
+    }
     try {
       const r = (await mcp("tools/call", { name: a.tool, arguments: a.args })) as {
         content?: { type: string; text?: string }[];
@@ -116,22 +120,24 @@ async function radikabunavi(): Promise<void> {
         .filter((c) => c.type === "text")
         .map((c) => c.text ?? "")
         .join("\n");
-      console.log(`\n[RKN] ${a.tool}(${preview(a.args)}) -> ${text ? preview(text) : preview(r)}`);
+      const out = text || JSON.stringify(r);
+      console.log(`\n[RKN] ${a.tool}(${JSON.stringify(a.args)}) ->\n${out.slice(0, a.cap)}${out.length > a.cap ? "…[truncated]" : ""}`);
     } catch (err) {
-      console.log(`\n[RKN] ${a.tool}(${preview(a.args)}) -> ERROR ${err instanceof Error ? err.message : err}`);
+      console.log(`\n[RKN] ${a.tool} -> ERROR ${err instanceof Error ? err.message : err}`);
     }
   }
 }
 
 async function main(): Promise<void> {
   console.log(`JQUANTS_API_KEY set: ${!!JQ_KEY} / RADIKABUNAVI_API_KEY set: ${!!MCP_KEY}`);
-  const to = new Date().toISOString().slice(0, 10);
-  const from = new Date(Date.now() - 200 * 864e5).toISOString().slice(0, 10);
+  // Free plan is ~12-week delayed: covered window ends ~2026-03-18 (per the
+  // first probe). Request inside it so bars actually return.
+  const to = "2026-03-18";
+  const from = "2026-01-06";
 
   if (JQ_KEY) {
     await jq(`equities/master?code=${CODE5}`);
     await jq(`equities/bars/daily?code=${CODE5}&from=${from}&to=${to}`);
-    await jq(`fins/details?code=${CODE5}`);
   } else {
     console.log("\n[JQ] skipped (no key)");
   }
