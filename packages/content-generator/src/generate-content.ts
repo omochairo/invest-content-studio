@@ -131,7 +131,7 @@ async function callGemini(prompt: string): Promise<{ title: string; beats: Beat[
       },
     }),
   });
-  if (!res.ok) throw new Error(`Gemini -> HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw new Error(`Gemini -> HTTP ${res.status}: ${(await res.text()).slice(0, 1500)}`);
   const data = (await res.json()) as {
     candidates?: { content?: { parts?: { text?: string }[] } }[];
   };
