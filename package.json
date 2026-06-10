@@ -10,6 +10,7 @@
   "scripts": {
     "fetch": "tsx packages/content-generator/src/fetch-earnings.ts",
     "generate": "tsx packages/content-generator/src/generate-content.ts",
+    "probe:gemini": "tsx packages/content-generator/src/probe-gemini.ts",
     "check": "tsx packages/content-generator/src/check-content.ts",
     "tts": "tsx packages/audio-generator/src/synthesize.ts",
     "render": "npm --workspace @ics/video-generator run render",
