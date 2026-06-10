@@ -9,10 +9,13 @@
   ],
   "scripts": {
     "fetch": "tsx packages/content-generator/src/fetch-earnings.ts",
+    "generate": "tsx packages/content-generator/src/generate-content.ts",
+    "check": "tsx packages/content-generator/src/check-content.ts",
     "tts": "tsx packages/audio-generator/src/synthesize.ts",
     "render": "npm --workspace @ics/video-generator run render",
     "still": "npm --workspace @ics/video-generator run still",
-    "studio": "npm --workspace @ics/video-generator run studio"
+    "studio": "npm --workspace @ics/video-generator run studio",
+    "typecheck": "tsc --noEmit -p packages/content-generator/tsconfig.json && tsc --noEmit -p packages/video-generator/tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
