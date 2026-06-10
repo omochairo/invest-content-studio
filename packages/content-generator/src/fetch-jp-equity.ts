@@ -142,27 +142,45 @@ function averagesBag(root: unknown): Record<string, unknown> | null {
  * per/pbr/roe/operating-margin. `own` are the company's own values (from
  * ラジ株ナビ) so both sides are shown together. Returns null if unavailable.
  */
+/** First array found at top level or under any envelope key (data/items/results/…). */
+function firstArray(x: unknown): Record<string, unknown>[] {
+  if (Array.isArray(x)) return x as Record<string, unknown>[];
+  if (x && typeof x === "object") {
+    for (const v of Object.values(x as Record<string, unknown>)) if (Array.isArray(v)) return v as Record<string, unknown>[];
+  }
+  return [];
+}
+const rowName = (r: Record<string, unknown>): string =>
+  String(r.name ?? r.name_ja ?? r.label ?? r.industry ?? r.japanese_name ?? r.industry_name ?? "");
+const rowSlug = (r: Record<string, unknown>): string => {
+  const s = r.slug ?? r.code ?? r.id ?? r.key;
+  return s != null ? String(s) : "";
+};
+
 async function fetchPeerComparison(
   sector: string | null,
   own: { operatingMargin: number | null; roe: number | null; per: number | null; pbr: number | null },
 ): Promise<PeerComparison | null> {
   if (!EDB_KEY || !sector) return null;
-  const list = await edb<{ industries?: { slug?: string; name?: string }[] } | { slug?: string; name?: string }[]>("industries");
-  const rows = Array.isArray(list) ? list : (list?.industries ?? []);
+  const list = await edb<unknown>("industries");
+  const rows = firstArray(list);
+  console.log(`    edinetdb industries: ${rows.length} rows; sample=${JSON.stringify(rows[0] ?? list).slice(0, 300)}`);
   if (!rows.length) return null;
   const want = norm(sector);
-  const hit = rows.find((r) => r.name && norm(r.name) === want) ?? rows.find((r) => r.name && norm(r.name).includes(want));
-  if (!hit?.slug) {
-    console.log(`    edinetdb: no industry slug for sector "${sector}" (have ${rows.length}: ${rows.slice(0, 6).map((r) => r.name).join("/")}…)`);
+  const hit = rows.find((r) => rowName(r) && norm(rowName(r)) === want) ?? rows.find((r) => rowName(r) && norm(rowName(r)).includes(want));
+  const slug = hit ? rowSlug(hit) : "";
+  if (!slug) {
+    console.log(`    edinetdb: no industry slug for sector "${sector}" (have ${rows.length}: ${rows.slice(0, 8).map(rowName).join("/")}…)`);
     return null;
   }
-  const detail = await edb<unknown>(`industries/${hit.slug}`);
+  const detail = await edb<unknown>(`industries/${slug}`);
   if (!detail) return null;
+  console.log(`    edinetdb industries/${slug} raw: ${JSON.stringify(detail).slice(0, 500)}`);
   const bag = averagesBag(detail);
   const sample =
     readNum(detail as Record<string, unknown>, ["company_count", "companies_count", "count", "total", "n"]) ??
     (Array.isArray((detail as Record<string, unknown>).companies) ? ((detail as Record<string, unknown>).companies as unknown[]).length : null);
-  console.log(`    edinetdb: ${sector} -> ${hit.slug}, sample=${sample}, avg keys=[${bag ? Object.keys(bag).slice(0, 12).join(",") : ""}]`);
+  console.log(`    edinetdb: ${sector} -> ${slug}, sample=${sample}, avg keys=[${bag ? Object.keys(bag).slice(0, 12).join(",") : ""}]`);
 
   const metrics: PeerMetric[] = [
     { label: "営業利益率", unit: "%", company: own.operatingMargin, industryAverage: readNum(bag, ["operating_margin", "operatingmargin", "avg_operating_margin", "operating_income_margin"]) },
@@ -175,11 +193,11 @@ async function fetchPeerComparison(
     return null;
   }
   return {
-    industry: hit.name ?? sector,
-    industrySlug: hit.slug,
+    industry: rowName(hit as Record<string, unknown>) || sector,
+    industrySlug: slug,
     sampleSize: sample,
     metrics,
-    source: { label: "edinetdb.jp（業種平均・EDINET 集計）", url: `https://edinetdb.jp/industries/${hit.slug}` },
+    source: { label: "edinetdb.jp（業種平均・EDINET 集計）", url: `https://edinetdb.jp/industries/${slug}` },
   };
 }
 
