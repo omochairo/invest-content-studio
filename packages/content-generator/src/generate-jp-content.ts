@@ -52,7 +52,7 @@ const DISCLAIMER =
   "数値は公表データ（有価証券報告書・適時開示等）に基づきます。投資判断はご自身の責任で行ってください。";
 
 // ── deterministic formatting (every load-bearing number comes from here) ──
-const f1 = (n: number) => (Math.round(n * 10) / 10).toString();
+const f1 = (n: number) => n.toFixed(1); // always 1 decimal for display consistency
 /** Yen -> 兆円 display string, 1 decimal (48036704000000 -> "48.0兆円"). */
 const choYen = (yen: number) => `${f1(yen / 1e12)}兆円`;
 /** Yen -> 兆 as a number, 1 decimal (for chart/line values). */
@@ -205,7 +205,7 @@ function factSheet(p: CompanyProfile): string {
   const lr = p.latestReport;
   if (lr)
     lines.push(
-      `最新短信(${lr.fiscalYearEnd}, 開示 ${lr.disclosedDate ?? "不明"}, 前年比): 売上 ${lr.changeNetSales != null ? signedPct1(lr.changeNetSales) : "不明"} / 営業利益 ${lr.changeOperatingIncome != null ? signedPct1(lr.changeOperatingIncome) : "不明"} / 純利益 ${lr.changeNetIncome != null ? signedPct1(lr.changeNetIncome) : "不明"}`,
+      `最新の決算短信での実績（${lr.fiscalYearEnd} 締め, 開示 ${lr.disclosedDate ?? "不明"}, 前年同期比）: 売上 ${lr.changeNetSales != null ? signedPct1(lr.changeNetSales) : "不明"} / 営業利益 ${lr.changeOperatingIncome != null ? signedPct1(lr.changeOperatingIncome) : "不明"} / 純利益 ${lr.changeNetIncome != null ? signedPct1(lr.changeNetIncome) : "不明"}`,
     );
   return lines.join("\n");
 }
@@ -241,6 +241,7 @@ function buildPrompt(p: CompanyProfile, plan: BeatPlan[], retryNote = ""): strin
 - 利回り・元本の保証をしない（「儲かる」「損しない」「元本保証」「リスクなし」等は禁止）。
 - 割安/割高に触れるときも、当チャンネルの断定や行動指示にしない。主語を事実・データ・市場に置く（「市場ではこう評価されている」「データ上はこうなっている」）。
 - 数値は下記「確定データ」の値だけを使う。新しい数値を創作しない。「およそ」等の言い換えは可だが桁・方向は変えない。
+- 確定データに無い属性（決算期間の種別＝通期/四半期、地域別内訳、製品名など）を推測で補わない。最新の決算短信は「第1四半期」等と限定せず「最新の決算短信での実績」とだけ述べる。
 
 # 深掘り（薄さ対策・すべて上記コンプラの範囲内で）
 1. 因果の物語化: 数字の増減を、一般に知られた要因（為替・需要・投資負担など）と結びつけ「データ上は」「一般に」と添えて語る。断定はしない。
