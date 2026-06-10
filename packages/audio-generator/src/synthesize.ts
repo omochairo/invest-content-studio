@@ -9,7 +9,7 @@
  * Env:
  *   VOICEVOX_URL      base URL of the engine (default http://localhost:50021)
  *                     e.g. http://<NAS-IP>:50021 when running on the NAS Docker
- *   VOICEVOX_SPEAKER  speaker id (default 3 = ずんだもん ノーマル)
+ *   VOICEVOX_SPEAKER  speaker id (default 2 = 四国めたん ノーマル)
  *
  * Run from repo root: `npm run tts`
  */
@@ -25,7 +25,7 @@ import type {
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BASE = (process.env.VOICEVOX_URL ?? "http://localhost:50021").replace(/\/$/, "");
-const SPEAKER = Number(process.env.VOICEVOX_SPEAKER ?? "3");
+const SPEAKER = Number(process.env.VOICEVOX_SPEAKER ?? "2");
 
 const INPUT = resolve(HERE, "../../shared/samples/market-recap.json");
 const OUT_DIR = resolve(HERE, "../../video-generator/public/audio");
