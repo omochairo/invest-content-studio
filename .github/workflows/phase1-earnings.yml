@@ -4,8 +4,8 @@ name: phase1-earnings
 # fetch (FMP) -> generate (Gemini Flash) -> validate+compliance gate ->
 # VOICEVOX TTS (docker service) -> Remotion render -> mp4 artifact.
 # VOICEVOX runs as a service container so CI is self-contained (the NAS engine
-# is unreachable from cloud runners). NOTE: the `push` trigger is for branch
-# iteration; drop it (keep workflow_dispatch + a schedule) before merge to main.
+# is unreachable from cloud runners). Dispatch-only for now; 1f adds a schedule.
+# (workflow_dispatch needs this file on the default branch — merge before using.)
 
 on:
   workflow_dispatch:
@@ -14,8 +14,6 @@ on:
         description: "Ticker symbol to render (must be on the watchlist coverage)"
         default: "NVDA"
         required: true
-  push:
-    branches: [feat/phase1-earnings]
 
 concurrency:
   group: phase1-earnings-${{ github.ref }}
