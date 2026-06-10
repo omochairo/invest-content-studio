@@ -143,7 +143,7 @@ async function callGemini(prompt: string): Promise<{ title: string; beats: Beat[
 
 function assemble(ev: EarningsEvent, gen: { title: string; beats: Beat[] }): ContentPackage {
   const chart = buildChart(ev);
-  const hasChart = chart.spec.bars.length > 0;
+  const hasChart = chart.spec.kind === "bar" && chart.spec.bars.length > 0;
   const narration: NarrationLine[] = [];
   const scenes: Scene[] = [];
   gen.beats.forEach((b, i) => {

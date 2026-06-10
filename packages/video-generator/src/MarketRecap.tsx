@@ -73,7 +73,7 @@ const SceneView = ({
           transform: `translateY(${(1 - enter) * 30}px)`,
         }}
       >
-        {asset ? (
+        {asset && asset.spec.kind === "bar" ? (
           <Chart spec={asset.spec} />
         ) : (
           <div

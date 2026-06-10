@@ -29,7 +29,9 @@ export const LineChart = ({ spec }: { spec: LineSpec }) => {
   // Approximate path length for the dash animation (sum of segment lengths).
   let len = 0;
   for (let i = 1; i < xy.length; i++) {
-    len += Math.hypot(xy[i].x - xy[i - 1].x, xy[i].y - xy[i - 1].y);
+    const a = xy[i];
+    const b = xy[i - 1];
+    if (a && b) len += Math.hypot(a.x - b.x, a.y - b.y);
   }
 
   return (
