@@ -13,6 +13,8 @@
     "generate": "tsx packages/content-generator/src/generate-content.ts",
     "generate:jp": "tsx packages/content-generator/src/generate-jp-content.ts",
     "check": "tsx packages/content-generator/src/check-content.ts",
+    "pick": "tsx packages/content-generator/src/pick-symbol.ts",
+    "mark:published": "tsx packages/content-generator/src/mark-published.ts",
     "tts": "tsx packages/audio-generator/src/synthesize.ts",
     "render": "npm --workspace @ics/video-generator run render",
     "still": "npm --workspace @ics/video-generator run still",
