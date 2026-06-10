@@ -56,6 +56,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: TEMP FMP probe (remove after migration)
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        run: npm run probe -- "$SYMBOL"
+
       - name: 1a Fetch earnings (FMP)
         env:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
