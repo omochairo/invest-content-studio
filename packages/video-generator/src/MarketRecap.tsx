@@ -11,6 +11,8 @@ import { loadFont } from "@remotion/google-fonts/NotoSansJP";
 import { type Asset, findAsset } from "@ics/shared";
 import { EST_MS, type MarketRecapProps, PAD_MS } from "./Root";
 import { Visual } from "./Visual";
+import { HeroCaption, Telop } from "./Caption";
+import { useCountUp } from "./useCountUp";
 import { bgGradient, formatBarValue, headlineBar, type Tone, toneForAsset } from "./theme";
 
 const { fontFamily } = loadFont("normal", {
@@ -92,46 +94,15 @@ const SceneView = ({
           style={{
             justifyContent: "center",
             alignItems: "center",
-            opacity: enter,
             transform: `translateY(${(1 - enter) * 30}px)`,
           }}
         >
-          <div
-            style={{
-              fontSize: 88,
-              fontWeight: 800,
-              color: "#fff",
-              textAlign: "center",
-              lineHeight: 1.3,
-              padding: "0 40px",
-            }}
-          >
-            {caption}
-          </div>
+          <HeroCaption text={caption} tone={tone} format="short" />
         </AbsoluteFill>
       )}
 
       {/* Telop near bottom (only when a visual occupies the stage) */}
-      {asset ? (
-        <div
-          style={{
-            position: "absolute",
-            left: 56,
-            right: 56,
-            bottom: 200,
-            textAlign: "center",
-            fontSize: 60,
-            fontWeight: 800,
-            color: "#fff",
-            background: "rgba(0,0,0,0.45)",
-            borderRadius: 20,
-            padding: "20px 28px",
-            opacity: enter,
-          }}
-        >
-          {caption}
-        </div>
-      ) : null}
+      {asset ? <Telop text={caption} tone={tone} format="short" enter={enter} /> : null}
     </AbsoluteFill>
   );
 };
@@ -146,24 +117,30 @@ const Hero = ({
   value: number;
   spec: import("@ics/shared").ChartSpec;
   tone: Tone;
-}) => (
-  <div style={{ textAlign: "center" }}>
-    <div style={{ fontSize: 40, fontWeight: 700, color: "#9fb3c8", marginBottom: 8 }}>
-      {label}
+}) => {
+  // Count up to the headline figure with the SAME formatter the chart uses, so
+  // the hero and the chart row never disagree. Clamps to the true value at
+  // settle; the count-up never crosses zero, so the sign prefix stays correct.
+  const animated = useCountUp(value, 0, 20);
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontSize: 40, fontWeight: 700, color: "#9fb3c8", marginBottom: 8 }}>
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 180,
+          fontWeight: 800,
+          lineHeight: 1,
+          color: tone.accent,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {formatBarValue(animated, spec.unit, spec.signed ?? true)}
+      </div>
     </div>
-    <div
-      style={{
-        fontSize: 180,
-        fontWeight: 800,
-        lineHeight: 1,
-        color: tone.accent,
-        fontVariantNumeric: "tabular-nums",
-      }}
-    >
-      {formatBarValue(value, spec.unit, spec.signed ?? true)}
-    </div>
-  </div>
-);
+  );
+};
 
 const Disclaimer = ({ text }: { text: string }) => (
   <div
