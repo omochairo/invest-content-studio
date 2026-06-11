@@ -2,9 +2,11 @@ import { Composition, staticFile } from "remotion";
 import type { AudioManifest, ContentPackage } from "@ics/shared";
 import sample from "@ics/shared/samples/market-recap.json";
 import longFormSample from "@ics/shared/samples/long-form-explainer.json";
+import showcaseSample from "@ics/shared/samples/visual-showcase.json";
 import { MarketRecap } from "./MarketRecap";
 import { LongFormExplainer } from "./LongFormExplainer";
 import { Thumbnail } from "./Thumbnail";
+import { VisualShowcase, SHOWCASE_SCENE_FRAMES } from "./VisualShowcase";
 import { BUMPER_FRAMES, ENDCARD_FRAMES } from "./theme";
 
 /** Intro bumper + outro end card are silent, fixed-length sequences prepended/
@@ -90,6 +92,18 @@ export const RemotionRoot = () => {
             props: { ...props, manifest },
           };
         }}
+      />
+      {/* VisualShowcase: deterministic, audio-independent stage exercising each
+          AssetSpec kind (donut/waterfall/gauge). Dev/QA + visual-regression
+          only — not part of the published pipeline. Fixed-length scenes. */}
+      <Composition
+        id="VisualShowcase"
+        component={VisualShowcase}
+        width={1920}
+        height={1080}
+        fps={FPS}
+        durationInFrames={Math.max(showcaseSample.scenes.length * SHOWCASE_SCENE_FRAMES, 1)}
+        defaultProps={{ pkg: showcaseSample as ContentPackage }}
       />
       <Composition
         id="Thumbnail"
