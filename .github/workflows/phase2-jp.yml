@@ -151,6 +151,12 @@ jobs:
             "$GITHUB_WORKSPACE/outputs/content/$CODE.json" out/render-props.json
           npx remotion render src/index.ts LongFormExplainer "out/$CODE.mp4" \
             --props=out/render-props.json
+      - name: 2e Render thumbnail (Remotion still, 1280x720)
+        if: ${{ github.event.inputs.render != 'false' }}
+        working-directory: packages/video-generator
+        run: |
+          npx remotion still src/index.ts Thumbnail "out/$CODE.thumb.png" \
+            --props=out/render-props.json
       - name: Report rendered duration / size
         if: ${{ github.event.inputs.render != 'false' }}
         run: |
@@ -176,4 +182,11 @@ jobs:
             packages/video-generator/out/${{ matrix.code }}.mp4
             outputs/content/${{ matrix.code }}.json
             packages/video-generator/public/audio/manifest.json
+          if-no-files-found: error
+      - name: Upload thumbnail artifact
+        if: ${{ github.event.inputs.render != 'false' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: jp-thumbnail-${{ matrix.code }}
+          path: packages/video-generator/out/${{ matrix.code }}.thumb.png
           if-no-files-found: error

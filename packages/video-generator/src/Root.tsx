@@ -4,6 +4,7 @@ import sample from "@ics/shared/samples/market-recap.json";
 import longFormSample from "@ics/shared/samples/long-form-explainer.json";
 import { MarketRecap } from "./MarketRecap";
 import { LongFormExplainer } from "./LongFormExplainer";
+import { Thumbnail } from "./Thumbnail";
 
 const FPS = 30;
 /** Breathing room appended after each spoken line (kept in sync with MarketRecap). */
@@ -82,6 +83,15 @@ export const RemotionRoot = () => {
             props: { ...props, manifest },
           };
         }}
+      />
+      <Composition
+        id="Thumbnail"
+        component={Thumbnail}
+        width={1280}
+        height={720}
+        fps={FPS}
+        durationInFrames={1}
+        defaultProps={{ pkg: sample as ContentPackage }}
       />
     </>
   );

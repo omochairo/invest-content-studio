@@ -6,7 +6,8 @@
   "scripts": {
     "studio": "remotion studio src/index.ts",
     "render": "remotion render src/index.ts MarketRecap out/phase0.mp4",
-    "still": "remotion still src/index.ts MarketRecap out/still.png"
+    "still": "remotion still src/index.ts MarketRecap out/still.png",
+    "still:thumb": "remotion still src/index.ts Thumbnail out/thumb.png"
   },
   "dependencies": {
     "@ics/shared": "*",
