@@ -12,6 +12,8 @@
     "fetch:jp": "tsx packages/content-generator/src/fetch-jp-equity.ts",
     "generate": "tsx packages/content-generator/src/generate-content.ts",
     "generate:jp": "tsx packages/content-generator/src/generate-jp-content.ts",
+    "request:jules:jp": "tsx packages/content-generator/src/request-jules-jp.ts",
+    "harvest:jules:jp": "tsx packages/content-generator/src/harvest-jules-jp.ts",
     "check": "tsx packages/content-generator/src/check-content.ts",
     "tts": "tsx packages/audio-generator/src/synthesize.ts",
     "render": "npm --workspace @ics/video-generator run render",

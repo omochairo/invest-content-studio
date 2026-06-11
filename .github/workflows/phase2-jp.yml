@@ -34,6 +34,11 @@ on:
         description: "Run the heavy TTS+render stage"
         type: boolean
         default: true
+      gen_source:
+        description: "Script source: gemini (generate:jp) or jules (harvest committed prose)"
+        type: choice
+        options: [gemini, jules]
+        default: gemini
 
 permissions:
   contents: read
@@ -99,10 +104,17 @@ jobs:
           path: outputs/equities/${{ matrix.code }}.json
           if-no-files-found: error
       - name: 2c Generate long-form ContentPackage (Gemini, numbers code-fixed)
+        if: ${{ github.event.inputs.gen_source != 'jules' }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
         run: npm run generate:jp -- "$CODE"
+      - name: 2c Harvest Jules deep-dive prose (numbers still code-fixed)
+        if: ${{ github.event.inputs.gen_source == 'jules' }}
+        # Reads the committed jules-research/$CODE.prose.json (from a merged Jules
+        # PR) and assembles it with the same code-derived assets + §2 gate. No
+        # Gemini. Requires the Jules PR to be merged into the checked-out ref.
+        run: npm run harvest:jules:jp -- "$CODE"
       - name: Gate (validate + §2 compliance) — fail stops publish
         run: npm run check -- "outputs/content/$CODE.json"
       - name: Show ContentPackage
