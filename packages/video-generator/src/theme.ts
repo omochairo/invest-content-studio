@@ -72,23 +72,29 @@ export const SCENE_FADE_FRAMES = 8;
 export const BUMPER_FRAMES = 45; // 1.5s @30fps
 export const ENDCARD_FRAMES = 75; // 2.5s @30fps
 
-// Channel chrome (domain-neutral on purpose: the same renderer serves toys too,
-// so no investment vocabulary here). channelName is a placeholder — confirm.
+// Channel chrome for the investment channel "決算図解室" (#58, confirmed).
+// The renderer itself stays domain-neutral so it can be reused for toys later
+// (逆輸入); when that happens, parameterize BRAND per channel rather than
+// hardcoding here — these values are investment-specific on purpose.
 export const BRAND = {
-  channelName: "IC Studio",
-  tagline: "データで読み解く",
+  channelName: "決算図解室",
+  tagline: "図解でわかる決算速報",
   ctaPrimary: "チャンネル登録で最新をチェック",
   ctaSecondary: "詳細・出典は概要欄から",
 };
 
 // Audio bed (#34): channel chrome, mixed at render time. The files in public/bed/
 // are domain-neutral (no music "meaning" in ContentPackage). Volumes are mixing-
-// layer concerns, not domain data.
-export const BGM_FILE = "bed/bgm.wav";
+// layer concerns, not domain data. bgm.mp3 is a royalty-free track (#58); Remotion
+// <Audio loop> plays mp3 natively so no wav transcode is needed. bgm-alt.mp3 is a
+// second track kept for variety (not wired). Volumes are conservative on purpose:
+// a mastered music track is far denser in the vocal band than the old sine
+// placeholder, so narration must stay clearly on top.
+export const BGM_FILE = "bed/bgm.mp3";
 export const SE_TRANSITION_FILE = "bed/se-transition.wav";
 export const SE_REVEAL_FILE = "bed/se-reveal.wav";
-export const BGM_BASE = 0.18; // BGM volume in silence
-export const BGM_DUCK = 0.06; // ducked under narration (~ -9dB)
+export const BGM_BASE = 0.15; // BGM volume in silence (~ -16 dBFS mult)
+export const BGM_DUCK = 0.045; // ducked under narration (~ -27 dBFS mult)
 export const BGM_RAMP_FRAMES = 6; // base<->duck ramp
 export const SE_VOLUME = 0.5;
 export const SE_FRAMES = 12; // one-shot SE sequence length
