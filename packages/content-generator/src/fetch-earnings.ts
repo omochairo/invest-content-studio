@@ -72,6 +72,12 @@ async function buildEvent(symbol: string): Promise<EarningsEvent | null> {
   const revSurprise = surprisePct(latest.revenueActual, latest.revenueEstimated);
   const q = quote[0];
 
+  const history = reported.slice(0, 4).map((r) => ({
+    period: r.date.slice(0, 7),
+    epsActual: r.epsActual,
+    revenueActual: r.revenueActual,
+  }));
+
   return {
     symbol,
     companyName: profile[0]?.companyName ?? symbol,
@@ -93,6 +99,7 @@ async function buildEvent(symbol: string): Promise<EarningsEvent | null> {
       asOf: new Date().toISOString().slice(0, 10),
     },
     source: { provider: "FMP", secFilingUrl: edgarUrl(profile[0]?.cik) },
+    history,
   };
 }
 

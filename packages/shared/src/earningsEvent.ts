@@ -40,6 +40,12 @@ export interface EarningsEvent {
     /** SEC EDGAR 8-K filing URL — the primary source cited in the video. */
     secFilingUrl: string | null;
   };
+  /** 直近の報告済み四半期 (新しい順)。業績推移グラフ素材。欠落時は空/undefined。 */
+  history?: {
+    period: string;
+    epsActual: number | null;
+    revenueActual: number | null;
+  }[];
 }
 
 /** Compute a surprise % from actual vs estimate (null-safe). */
