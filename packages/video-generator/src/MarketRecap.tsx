@@ -9,11 +9,13 @@ import {
 } from "remotion";
 import { loadFont } from "@remotion/google-fonts/NotoSansJP";
 import { type Asset, findAsset } from "@ics/shared";
-import { EST_MS, type MarketRecapProps, PAD_MS } from "./Root";
+import { type MarketRecapProps } from "./Root";
 import { Visual } from "./Visual";
 import { HeroCaption, Telop } from "./Caption";
 import { useCountUp } from "./useCountUp";
 import { Bumper, EndCard, SceneTransition } from "./Brand";
+import { AudioBed } from "./AudioBed";
+import { buildSceneSpans } from "./sceneSpans";
 import {
   BUMPER_FRAMES,
   bgGradient,
@@ -34,6 +36,8 @@ export const MarketRecap = ({ pkg, manifest }: MarketRecapProps) => {
   const { fps } = useVideoConfig();
   const clipFor = (narrationIndex: number) =>
     manifest?.clips.find((c) => c.index === narrationIndex);
+  // Single source for the per-scene frame layout, shared with the audio bed.
+  const spans = buildSceneSpans(pkg, manifest, fps);
 
   return (
     <AbsoluteFill style={{ backgroundColor: BG, fontFamily }}>
@@ -44,8 +48,7 @@ export const MarketRecap = ({ pkg, manifest }: MarketRecapProps) => {
         </Series.Sequence>
         {pkg.scenes.map((scene, i) => {
           const clip = clipFor(scene.narrationIndex);
-          const durMs = (clip?.durationMs ?? EST_MS) + PAD_MS;
-          const frames = Math.max(1, Math.ceil((durMs / 1000) * fps));
+          const frames = spans[i]!.totalFrames;
           const asset = findAsset(pkg, scene.visualRef);
           return (
             <Series.Sequence durationInFrames={frames} key={i}>
@@ -63,6 +66,8 @@ export const MarketRecap = ({ pkg, manifest }: MarketRecapProps) => {
           <EndCard durationInFrames={ENDCARD_FRAMES} />
         </Series.Sequence>
       </Series>
+      {/* BGM + SE bed (#34): additive audio layer over the whole timeline. */}
+      <AudioBed spans={spans} />
       <Disclaimer text={pkg.meta.disclaimer} />
     </AbsoluteFill>
   );

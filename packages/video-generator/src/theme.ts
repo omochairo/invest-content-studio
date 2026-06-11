@@ -80,3 +80,15 @@ export const BRAND = {
   ctaPrimary: "チャンネル登録で最新をチェック",
   ctaSecondary: "詳細・出典は概要欄から",
 };
+
+// Audio bed (#34): channel chrome, mixed at render time. The files in public/bed/
+// are domain-neutral (no music "meaning" in ContentPackage). Volumes are mixing-
+// layer concerns, not domain data.
+export const BGM_FILE = "bed/bgm.wav";
+export const SE_TRANSITION_FILE = "bed/se-transition.wav";
+export const SE_REVEAL_FILE = "bed/se-reveal.wav";
+export const BGM_BASE = 0.18; // BGM volume in silence
+export const BGM_DUCK = 0.06; // ducked under narration (~ -9dB)
+export const BGM_RAMP_FRAMES = 6; // base<->duck ramp
+export const SE_VOLUME = 0.5;
+export const SE_FRAMES = 12; // one-shot SE sequence length
