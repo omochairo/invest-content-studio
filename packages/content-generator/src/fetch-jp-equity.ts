@@ -11,7 +11,14 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { type CompanyProfile, operatingMargin, type PeerComparison, type PeerMetric } from "@ics/shared";
+import {
+  type CompanyProfile,
+  operatingMargin,
+  type PeerComparison,
+  type PeerMetric,
+  type RankMetric,
+  type SectorRanking,
+} from "@ics/shared";
 
 try {
   process.loadEnvFile();
@@ -189,6 +196,68 @@ async function fetchPeerComparison(
   };
 }
 
+const rowSecCode = (r: Record<string, unknown>): string => {
+  const v = r.sec_code ?? r.securities_code ?? r.code ?? r.ticker ?? r.securityCode;
+  return v != null ? String(v).replace(/\D/g, "").slice(0, 4) : "";
+};
+
+/**
+ * The company's rank within its OWN sector via edinetdb's per-industry member
+ * list (`/v1/industries/{slug}`), for the same three metrics as the peer
+ * average. Rank is computed from the homogeneous edinetdb list (so positions
+ * are comparable across members), while the displayed value reuses the own
+ * ラジ株ナビ value for in-video consistency. Higher is better for all three
+ * (operating margin / ROE / revenue size), so rank = (# strictly greater) + 1.
+ * Reuses the slug already resolved by fetchPeerComparison (no extra /industries
+ * match). §2-safe: a factual rank with source, no rival tickers named. Returns
+ * null on any failure or when the company isn't in the member list.
+ */
+async function fetchSectorRanking(
+  slug: string,
+  industryName: string,
+  code: string,
+  own: { operatingMargin: number | null; roe: number | null; netSales: number | null },
+): Promise<SectorRanking | null> {
+  if (!EDB_KEY || !slug) return null;
+  const rows = firstArray(await edb<unknown>(`industries/${encodeURIComponent(slug)}`));
+  if (!rows.length) {
+    console.log(`    edinetdb: /industries/${slug} returned no member rows — skipping ranking`);
+    return null;
+  }
+  const me = code.replace(/\D/g, "").slice(0, 4);
+  const meRow = rows.find((r) => rowSecCode(r) === me);
+  if (!meRow) {
+    console.log(`    edinetdb: code ${code} not in industry "${slug}" member list (${rows.length}) — skipping ranking`);
+    return null;
+  }
+  const configs: { label: string; unit: string; keys: string[]; company: number | null }[] = [
+    { label: "営業利益率", unit: "%", keys: ["operating_margin"], company: own.operatingMargin },
+    { label: "ROE", unit: "%", keys: ["roe"], company: own.roe },
+    { label: "売上規模", unit: "円", keys: ["revenue", "net_sales"], company: own.netSales },
+  ];
+  const metrics: RankMetric[] = [];
+  for (const c of configs) {
+    const mine = readNum(meRow, c.keys);
+    if (mine == null) continue;
+    const vals = rows.map((r) => readNum(r, c.keys)).filter((v): v is number => v != null);
+    if (vals.length < 2) continue;
+    const rank = vals.filter((v) => v > mine).length + 1;
+    metrics.push({ label: c.label, unit: c.unit, company: c.company ?? mine, rank, outOf: vals.length });
+  }
+  if (metrics.length === 0) {
+    console.log(`    edinetdb: industry "${slug}" member rows had no usable metrics — skipping ranking`);
+    return null;
+  }
+  console.log(`    edinetdb: ${industryName} ranking (universe ${rows.length}); ${metrics.map((m) => `${m.label}${m.rank}/${m.outOf}位`).join(" ")}`);
+  return {
+    industry: industryName || slug,
+    industrySlug: slug,
+    universeSize: rows.length,
+    metrics,
+    source: { label: "edinetdb.jp（業種内ランキング・EDINET 集計）", url: `https://edinetdb.jp/industries/${slug}` },
+  };
+}
+
 type FyRow = Record<string, unknown> & { netSales?: number; operatingIncome?: number };
 
 async function buildProfile(code: string): Promise<CompanyProfile> {
@@ -219,11 +288,13 @@ async function buildProfile(code: string): Promise<CompanyProfile> {
 
   const ownMargin = num(fy.operatingMargin) ?? operatingMargin(num(fy.operatingIncome), num(fy.netSales));
   const ownPer = num(fy.per) ?? num(fy.priceEarningsRatio);
-  const peerComparison = await fetchPeerComparison(m.S33Nm ?? null, {
-    operatingMargin: ownMargin,
-    roe: num(fy.roe),
-    netSales: num(fy.netSales),
-  });
+  const own = { operatingMargin: ownMargin, roe: num(fy.roe), netSales: num(fy.netSales) };
+  const peerComparison = await fetchPeerComparison(m.S33Nm ?? null, own);
+  // Ranking reuses the slug already resolved by the peer lookup (one extra
+  // /industries/{slug} call); skipped when the sector couldn't be matched.
+  const sectorRanking = peerComparison?.industrySlug
+    ? await fetchSectorRanking(peerComparison.industrySlug, peerComparison.industry, code, own)
+    : null;
 
   return {
     code,
@@ -263,12 +334,14 @@ async function buildProfile(code: string): Promise<CompanyProfile> {
         }
       : null,
     peerComparison,
+    sectorRanking,
     price,
     sources: [
       { label: "J-Quants（東証 上場・株価データ）", url: "https://jpx-jquants.com/" },
       { label: "ラジ株ナビ（EDINET 有報・TDnet 短信ベース財務）", url: "https://radikabunavi.com/" },
       ...(fy.edinetFilingUrl ? [{ label: "EDINET 有価証券報告書", url: String(fy.edinetFilingUrl) }] : []),
       ...(peerComparison ? [peerComparison.source] : []),
+      ...(sectorRanking ? [sectorRanking.source] : []),
     ],
   };
 }
@@ -287,7 +360,7 @@ async function main(): Promise<void> {
       wrote++;
       const f = p.financials;
       console.log(
-        `  ${code} ${p.companyName} [${p.sector}] 売上${f.netSales}/営利${f.operatingIncome} (率${f.operatingMargin?.toFixed(1)}%) PER${p.valuation.per}/PBR${p.valuation.pbr} 推移${p.revenueTrend.length}期 seg${p.segments.length} 株価${p.price?.close ?? "n/a"} peer${p.peerComparison ? `(${p.peerComparison.metrics.filter((mt) => mt.industryAverage != null).length}/${p.peerComparison.metrics.length}指標)` : "なし"}`,
+        `  ${code} ${p.companyName} [${p.sector}] 売上${f.netSales}/営利${f.operatingIncome} (率${f.operatingMargin?.toFixed(1)}%) PER${p.valuation.per}/PBR${p.valuation.pbr} 推移${p.revenueTrend.length}期 seg${p.segments.length} 株価${p.price?.close ?? "n/a"} peer${p.peerComparison ? `(${p.peerComparison.metrics.filter((mt) => mt.industryAverage != null).length}/${p.peerComparison.metrics.length}指標)` : "なし"} rank${p.sectorRanking ? `(${p.sectorRanking.metrics.length}指標/${p.sectorRanking.universeSize}社)` : "なし"}`,
       );
     } catch (err) {
       console.log(`  ${code}: ${err instanceof Error ? err.message : err}`);
