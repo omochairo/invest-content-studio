@@ -1,0 +1,78 @@
+name: visual-regression
+
+# Visual regression for the Remotion renderer (#42). Renders a fixed set of
+# stills (built-in sample props, pinned settled frames) and pixel-diffs them
+# against committed baselines so any rendering change is caught in CI.
+#
+# Baselines MUST be generated in this same ubuntu-22.04 + Chromium environment
+# (font anti-aliasing is host-specific). Two paths produce them:
+#   - push to the proving branch  -> UPDATE mode: render + commit baselines back
+#   - workflow_dispatch update=true -> UPDATE mode (after this file is on main)
+# A pull_request runs COMPARE mode and fails on a diff, uploading the diff PNGs.
+
+on:
+  pull_request:
+    paths:
+      - "packages/video-generator/**"
+      - ".github/workflows/visual-regression.yml"
+  push:
+    branches:
+      - feat/visual-regression-42
+  workflow_dispatch:
+    inputs:
+      update:
+        description: "Regenerate and commit baselines (run on the target branch)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  visual:
+    runs-on: ubuntu-22.04
+    # UPDATE mode on a proving-branch push or an explicit dispatch; COMPARE on PR.
+    env:
+      UPDATE: ${{ github.event_name == 'push' || github.event.inputs.update == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium runtime deps (Remotion still)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libasound2 \
+            libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
+            libatk-bridge2.0-0 libcups2 libpango-1.0-0 libcairo2
+
+      - name: Compare stills against baselines
+        if: ${{ env.UPDATE != 'true' }}
+        working-directory: packages/video-generator
+        run: npm run test:visual
+      - name: Upload diff images on regression
+        if: ${{ failure() && env.UPDATE != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diff
+          path: packages/video-generator/out/visual/diff
+          if-no-files-found: ignore
+
+      - name: Regenerate baselines
+        if: ${{ env.UPDATE == 'true' }}
+        working-directory: packages/video-generator
+        run: npm run test:visual:update
+      - name: Commit refreshed baselines
+        if: ${{ env.UPDATE == 'true' }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add packages/video-generator/__baselines__
+          if git diff --cached --quiet; then
+            echo "baselines unchanged"; exit 0
+          fi
+          git commit -m "chore(visual): refresh renderer baselines [skip ci]"
+          git push origin "HEAD:${{ github.ref_name }}"

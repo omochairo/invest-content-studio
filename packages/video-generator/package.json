@@ -7,7 +7,9 @@
     "studio": "remotion studio src/index.ts",
     "render": "remotion render src/index.ts MarketRecap out/phase0.mp4",
     "still": "remotion still src/index.ts MarketRecap out/still.png",
-    "still:thumb": "remotion still src/index.ts Thumbnail out/thumb.png"
+    "still:thumb": "remotion still src/index.ts Thumbnail out/thumb.png",
+    "test:visual": "node scripts/visual-regression.mjs",
+    "test:visual:update": "node scripts/visual-regression.mjs --update"
   },
   "dependencies": {
     "@ics/shared": "*",
@@ -20,6 +22,8 @@
   "devDependencies": {
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "pixelmatch": "^6.0.0",
+    "pngjs": "^7.0.0",
     "typescript": "^5.7.2"
   }
 }
