@@ -133,8 +133,12 @@ jobs:
         if: ${{ github.event.inputs.render != 'false' }}
         working-directory: packages/video-generator
         run: |
+          # Wrap the bare ContentPackage into { pkg, manifest } — passing it raw
+          # silently renders the sample (see scripts/render-props.mjs).
+          node scripts/render-props.mjs \
+            "$GITHUB_WORKSPACE/outputs/content/$CODE.json" out/render-props.json
           npx remotion render src/index.ts LongFormExplainer "out/$CODE.mp4" \
-            --props="$GITHUB_WORKSPACE/outputs/content/$CODE.json"
+            --props=out/render-props.json
       - name: Report rendered duration / size
         if: ${{ github.event.inputs.render != 'false' }}
         run: |
