@@ -12,15 +12,25 @@ const NOTE = "#6f8298";
  *  renderer never reformats a load-bearing number. */
 export const StatGrid = ({ spec }: { spec: StatGridSpec }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { fps, width } = useVideoConfig();
+
+  const vertical = width < 1300;
+  const containerWidth = vertical ? width - 144 : 1240;
+  const gridColumns = vertical ? "repeat(2, 1fr)" : "repeat(3, 1fr)";
+  const gap = vertical ? 20 : 28;
+  const padding = vertical ? "20px 24px" : "28px 32px";
+
+  const labelSize = vertical ? 26 : 32;
+  const valueSize = vertical ? 52 : 64;
+  const noteSize = vertical ? 22 : 26;
 
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "repeat(3, 1fr)",
-        gap: 28,
-        width: 1240,
+        gridTemplateColumns: gridColumns,
+        gap: gap,
+        width: containerWidth,
       }}
     >
       {spec.items.map((it, i) => {
@@ -32,16 +42,16 @@ export const StatGrid = ({ spec }: { spec: StatGridSpec }) => {
               background: CARD,
               border: `2px solid ${BORDER}`,
               borderRadius: 18,
-              padding: "28px 32px",
+              padding: padding,
               opacity: enter,
               transform: `translateY(${(1 - enter) * 24}px)`,
             }}
           >
-            <div style={{ fontSize: 32, color: LABEL, marginBottom: 12 }}>{it.label}</div>
-            <div style={{ fontSize: 64, fontWeight: 800, color: VALUE, fontVariantNumeric: "tabular-nums" }}>
+            <div style={{ fontSize: labelSize, color: LABEL, marginBottom: 12 }}>{it.label}</div>
+            <div style={{ fontSize: valueSize, fontWeight: 800, color: VALUE, fontVariantNumeric: "tabular-nums" }}>
               {it.value}
             </div>
-            {it.note ? <div style={{ fontSize: 26, color: NOTE, marginTop: 8 }}>{it.note}</div> : null}
+            {it.note ? <div style={{ fontSize: noteSize, color: NOTE, marginTop: 8 }}>{it.note}</div> : null}
           </div>
         );
       })}
