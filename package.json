@@ -24,7 +24,8 @@
     "studio": "npm --workspace @ics/video-generator run studio",
     "yt:auth": "tsx packages/publisher/src/youtube-auth.ts",
     "yt:upload": "tsx packages/publisher/src/upload-youtube.ts",
-    "typecheck": "tsc --noEmit -p packages/content-generator/tsconfig.json && tsc --noEmit -p packages/video-generator/tsconfig.json && tsc --noEmit -p packages/publisher/tsconfig.json"
+    "typecheck": "tsc --noEmit -p packages/content-generator/tsconfig.json && tsc --noEmit -p packages/video-generator/tsconfig.json && tsc --noEmit -p packages/publisher/tsconfig.json",
+    "test": "tsx --test \"packages/**/src/**/*.test.ts\""
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
