@@ -51,6 +51,19 @@
   同じ ContentPackage を吐けば同じレンダラーが動く＝逆輸入の前提を壊さない。
 - TTS / 動画エンジンの差し替えは ContentPackage 契約の裏で行う。契約を変えるときは SPEC.md を先に更新。
 
+### 4.1 台本生成の二段構え（Gemini / Jules）
+
+JP 長尺の台本生成は **prose（title / narration / caption）のみ** を LLM に委ね、**数値・チャート・stat は
+すべてコード由来固定**（§3 非ハルシ契約）。これは生成エンジンに依らず不変。
+
+- **日次・量産 = Gemini**（`generate:jp`）。同期・安価。`gemini-2.5-flash`→`-lite` 日次 quota フォールバックあり。
+- **選抜・深掘り = Jules**（`request:jules:jp` → AUTO_CREATE_PR で `jules-research/<code>.prose.json` を追加
+  → マージ後 `harvest:jules:jp` / `phase2-jp.yml gen_source=jules`）。Jules は非同期エージェントで時間をかけ
+  深く調査するが、**書いてよいのは prose だけ**。harvest は Gemini 経路と**同一の assemble + validate +
+  §2 gate** を通すので、Jules prose も §2 違反は確実にブロックされる（`verify:jules` が回帰検証）。
+- **Jules quota は omochairo と共有**（Pro 100/日・rolling 24h）。`request:jules:jp` は直近作成数で gate し、
+  予算切れ時は no-op。**自動 schedule では回さず手動 dispatch のみ**（omochairo の記事生成を枯渇させない）。
+
 ## 5. 自動化ワークフロー規律
 
 - 生成タスクは **fetch → ContentPackage 生成 → validate（スキーマ）→ コンプラ gate → レンダリング →

@@ -94,7 +94,11 @@ async function main(): Promise<void> {
   console.log(`-> dispatched ${dispatched}/${argv.length} Jules session(s)`);
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+// Only run as a CLI (defensive: keep import side-effect-free like the others).
+const isEntry = process.argv[1] ? fileURLToPath(import.meta.url) === resolve(process.argv[1]) : false;
+if (isEntry) {
+  main().catch((err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}
