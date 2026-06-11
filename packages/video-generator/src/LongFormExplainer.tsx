@@ -10,30 +10,14 @@ import {
 import { loadFont } from "@remotion/google-fonts/NotoSansJP";
 import { type Asset, findAsset } from "@ics/shared";
 import { EST_MS, type MarketRecapProps, PAD_MS } from "./Root";
-import { Chart } from "./Chart";
-import { LineChart } from "./LineChart";
-import { StatGrid } from "./StatGrid";
+import { Visual } from "./Visual";
+import { bgGradient, toneForAsset } from "./theme";
 
 const { fontFamily } = loadFont("normal", {
   weights: ["400", "700", "800"],
   subsets: ["latin", "japanese"],
 });
 const BG = "#0b1220";
-const ACCENT = "#3fb950";
-
-/** Resolve any data-driven asset to its visual component by discriminant. */
-const Visual = ({ asset }: { asset: Asset }) => {
-  switch (asset.spec.kind) {
-    case "bar":
-      return <Chart spec={asset.spec} />;
-    case "line":
-      return <LineChart spec={asset.spec} />;
-    case "stats":
-      return <StatGrid spec={asset.spec} />;
-    default:
-      return null;
-  }
-};
 
 /** Long-form (16:9) explainer: a chaptered walk-through with a persistent
  *  title/section header. Reuses the domain-agnostic ContentPackage, so the
@@ -82,19 +66,20 @@ const SceneView = ({
 }) => {
   const frame = useCurrentFrame();
   const enter = interpolate(frame, [0, 12], [0, 1], { extrapolateRight: "clamp" });
+  const tone = toneForAsset(asset);
 
   return (
-    <AbsoluteFill style={{ padding: "64px 96px" }}>
+    <AbsoluteFill style={{ background: bgGradient(tone), padding: "64px 96px" }}>
       {/* Header: accent bar + section chip + program title */}
       <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-        <div style={{ width: 14, height: 52, background: ACCENT, borderRadius: 7 }} />
+        <div style={{ width: 14, height: 52, background: tone.accent, borderRadius: 7 }} />
         {section ? (
           <div
             style={{
               fontSize: 34,
               fontWeight: 800,
               color: "#06210f",
-              background: ACCENT,
+              background: tone.accent,
               borderRadius: 999,
               padding: "8px 28px",
             }}

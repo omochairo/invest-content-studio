@@ -10,7 +10,8 @@ import {
 import { loadFont } from "@remotion/google-fonts/NotoSansJP";
 import { type Asset, findAsset } from "@ics/shared";
 import { EST_MS, type MarketRecapProps, PAD_MS } from "./Root";
-import { Chart } from "./Chart";
+import { Visual } from "./Visual";
+import { bgGradient, formatBarValue, headlineBar, type Tone, toneForAsset } from "./theme";
 
 const { fontFamily } = loadFont("normal", {
   weights: ["400", "700", "800"],
@@ -55,27 +56,46 @@ const SceneView = ({
 }) => {
   const frame = useCurrentFrame();
   const enter = interpolate(frame, [0, 10], [0, 1], { extrapolateRight: "clamp" });
+  const tone = toneForAsset(asset);
+  // Motion direction reads the tone: positive rises up, negative settles down,
+  // neutral simply fades — a small data-linked cue, not domain logic.
+  const dir = tone.key === "positive" ? 1 : tone.key === "negative" ? -1 : 0;
+  const shift = (1 - enter) * 30 * dir;
+  const head = headlineBar(asset?.spec);
 
   return (
-    <AbsoluteFill style={{ padding: 72 }}>
-      {/* Title band */}
+    <AbsoluteFill style={{ background: bgGradient(tone), padding: 72 }}>
+      {/* Title band — accent recolored by tone */}
       <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-        <div style={{ width: 12, height: 48, background: "#3fb950", borderRadius: 6 }} />
+        <div style={{ width: 12, height: 48, background: tone.accent, borderRadius: 6 }} />
         <div style={{ fontSize: 46, fontWeight: 700, color: "#9fb3c8" }}>{title}</div>
       </div>
 
-      {/* Center stage: chart, or large caption when no visual */}
-      <AbsoluteFill
-        style={{
-          justifyContent: "center",
-          alignItems: "center",
-          opacity: enter,
-          transform: `translateY(${(1 - enter) * 30}px)`,
-        }}
-      >
-        {asset && asset.spec.kind === "bar" ? (
-          <Chart spec={asset.spec} />
-        ) : (
+      {asset ? (
+        <AbsoluteFill
+          style={{
+            justifyContent: "center",
+            alignItems: "center",
+            gap: 48,
+            opacity: enter,
+            transform: `translateY(${shift}px)`,
+          }}
+        >
+          {/* Hero: the headline number is the protagonist, tone-colored */}
+          {head && asset.spec.kind === "bar" ? (
+            <Hero label={head.label} value={head.value} spec={asset.spec} tone={tone} />
+          ) : null}
+          <Visual asset={asset} />
+        </AbsoluteFill>
+      ) : (
+        <AbsoluteFill
+          style={{
+            justifyContent: "center",
+            alignItems: "center",
+            opacity: enter,
+            transform: `translateY(${(1 - enter) * 30}px)`,
+          }}
+        >
           <div
             style={{
               fontSize: 88,
@@ -88,19 +108,19 @@ const SceneView = ({
           >
             {caption}
           </div>
-        )}
-      </AbsoluteFill>
+        </AbsoluteFill>
+      )}
 
-      {/* Telop near bottom (only when a chart occupies the stage) */}
+      {/* Telop near bottom (only when a visual occupies the stage) */}
       {asset ? (
         <div
           style={{
             position: "absolute",
             left: 56,
             right: 56,
-            bottom: 240,
+            bottom: 200,
             textAlign: "center",
-            fontSize: 64,
+            fontSize: 60,
             fontWeight: 800,
             color: "#fff",
             background: "rgba(0,0,0,0.45)",
@@ -115,6 +135,35 @@ const SceneView = ({
     </AbsoluteFill>
   );
 };
+
+const Hero = ({
+  label,
+  value,
+  spec,
+  tone,
+}: {
+  label: string;
+  value: number;
+  spec: import("@ics/shared").ChartSpec;
+  tone: Tone;
+}) => (
+  <div style={{ textAlign: "center" }}>
+    <div style={{ fontSize: 40, fontWeight: 700, color: "#9fb3c8", marginBottom: 8 }}>
+      {label}
+    </div>
+    <div
+      style={{
+        fontSize: 180,
+        fontWeight: 800,
+        lineHeight: 1,
+        color: tone.accent,
+        fontVariantNumeric: "tabular-nums",
+      }}
+    >
+      {formatBarValue(value, spec.unit, spec.signed ?? true)}
+    </div>
+  </div>
+);
 
 const Disclaimer = ({ text }: { text: string }) => (
   <div
