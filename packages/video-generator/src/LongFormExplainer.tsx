@@ -11,6 +11,7 @@ import { loadFont } from "@remotion/google-fonts/NotoSansJP";
 import { type Asset, findAsset } from "@ics/shared";
 import { EST_MS, type MarketRecapProps, PAD_MS } from "./Root";
 import { Visual } from "./Visual";
+import { HeroCaption, Telop } from "./Caption";
 import { bgGradient, toneForAsset } from "./theme";
 
 const { fontFamily } = loadFont("normal", {
@@ -95,49 +96,15 @@ const SceneView = ({
         style={{
           justifyContent: "center",
           alignItems: "center",
-          opacity: enter,
+          opacity: asset ? enter : 1,
           transform: `translateY(${(1 - enter) * 28}px)`,
         }}
       >
-        {asset ? (
-          <Visual asset={asset} />
-        ) : (
-          <div
-            style={{
-              fontSize: 96,
-              fontWeight: 800,
-              color: "#fff",
-              textAlign: "center",
-              lineHeight: 1.3,
-              padding: "0 80px",
-            }}
-          >
-            {caption}
-          </div>
-        )}
+        {asset ? <Visual asset={asset} /> : <HeroCaption text={caption} tone={tone} format="wide" />}
       </AbsoluteFill>
 
       {/* Telop band at the bottom when a visual occupies the stage */}
-      {asset ? (
-        <div
-          style={{
-            position: "absolute",
-            left: 96,
-            right: 96,
-            bottom: 150,
-            textAlign: "center",
-            fontSize: 56,
-            fontWeight: 800,
-            color: "#fff",
-            background: "rgba(0,0,0,0.45)",
-            borderRadius: 20,
-            padding: "18px 28px",
-            opacity: enter,
-          }}
-        >
-          {caption}
-        </div>
-      ) : null}
+      {asset ? <Telop text={caption} tone={tone} format="wide" enter={enter} /> : null}
     </AbsoluteFill>
   );
 };
