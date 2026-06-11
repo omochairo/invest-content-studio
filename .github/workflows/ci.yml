@@ -1,0 +1,26 @@
+name: ci
+
+# Fast PR gate: typecheck + unit tests for every change. The heavier pipelines
+# (phase1/phase2) only run on dispatch/schedule and the visual-regression job
+# only covers renderer changes, so this is the one check that runs on all PRs.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test

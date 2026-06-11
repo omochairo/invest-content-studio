@@ -16,7 +16,8 @@
 import { readFile, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import type { ContentPackage } from "@ics/shared";
+import type { AudioManifest, ContentPackage } from "@ics/shared";
+import { buildYouTubeMeta } from "./youtube-meta";
 
 try {
   process.loadEnvFile();
@@ -49,19 +50,16 @@ async function accessToken(): Promise<string> {
   return data.access_token;
 }
 
-function buildDescription(pkg: ContentPackage): string {
-  const script = pkg.narration.map((n) => n.text).join("\n");
-  const sources = pkg.meta.sources.map((s) => `・${s.label}: ${s.url}`).join("\n");
-  return [
-    script,
-    "",
-    "― 出典 ―",
-    sources,
-    "",
-    pkg.meta.disclaimer,
-    "",
-    "#決算 #米国株 #投資 #Shorts",
-  ].join("\n");
+/** Load the audio manifest the renderer used, for chapter timestamps. The TTS
+ *  step writes a single manifest per pipeline run, so it matches this symbol.
+ *  Missing manifest -> null (description still builds; chapters are omitted). */
+async function loadManifest(): Promise<AudioManifest | null> {
+  try {
+    const path = resolve(ROOT, "packages/video-generator/public/audio/manifest.json");
+    return JSON.parse(await readFile(path, "utf8")) as AudioManifest;
+  } catch {
+    return null;
+  }
 }
 
 async function main(): Promise<void> {
@@ -76,12 +74,17 @@ async function main(): Promise<void> {
   const mp4 = resolve(ROOT, `packages/video-generator/out/${symbol}.mp4`);
   const size = (await stat(mp4)).size;
 
+  const manifest = await loadManifest();
+  const meta = buildYouTubeMeta(pkg, manifest, { symbol });
+  if (meta.chapters.length > 0)
+    console.log(`chapters: ${meta.chapters.map((c) => c.timestamp).join(", ")}`);
+
   const metadata = {
     snippet: {
-      title: pkg.meta.title.slice(0, 100),
-      description: buildDescription(pkg).slice(0, 4900),
+      title: meta.title.slice(0, 100),
+      description: meta.description.slice(0, 4900),
       categoryId: CATEGORY,
-      tags: ["決算", "米国株", "投資", symbol],
+      tags: meta.tags,
     },
     status: { privacyStatus: PRIVACY, selfDeclaredMadeForKids: false },
   };

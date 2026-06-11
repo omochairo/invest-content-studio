@@ -1,5 +1,6 @@
 import { Composition, staticFile } from "remotion";
 import type { AudioManifest, ContentPackage } from "@ics/shared";
+import { DEFAULT_SCENE_TIMING } from "@ics/shared";
 import sample from "@ics/shared/samples/market-recap.json";
 import longFormSample from "@ics/shared/samples/long-form-explainer.json";
 import showcaseSample from "@ics/shared/samples/visual-showcase.json";
@@ -15,11 +16,13 @@ import { BUMPER_FRAMES, ENDCARD_FRAMES } from "./theme";
  *  duration math and the compositions share the same constants (theme.ts). */
 const BRAND_FRAMES = BUMPER_FRAMES + ENDCARD_FRAMES;
 
-const FPS = 30;
+// Layout constants come from the canonical config in @ics/shared so the
+// renderer and the chapter-timestamp math (#38) share one definition.
+const FPS = DEFAULT_SCENE_TIMING.fps;
 /** Breathing room appended after each spoken line (kept in sync with MarketRecap). */
-export const PAD_MS = 350;
+export const PAD_MS = DEFAULT_SCENE_TIMING.padMs;
 /** Fallback per-scene length when no audio manifest exists yet (studio preview). */
-export const EST_MS = 3000;
+export const EST_MS = DEFAULT_SCENE_TIMING.estMs;
 
 export type MarketRecapProps = {
   pkg: ContentPackage;

@@ -9,6 +9,7 @@
  * review score delta, so this stays reusable across domains.
  */
 import type { Asset, AssetSpec, ChartSpec } from "@ics/shared";
+import { DEFAULT_SCENE_TIMING } from "@ics/shared";
 
 export type ToneKey = "positive" | "negative" | "neutral";
 
@@ -69,8 +70,10 @@ export const SCENE_FADE_FRAMES = 8;
 
 // Brand sequences (silent, additive, fixed-length). Imported by Root.tsx so the
 // total-duration math (calculateMetadata) shares a single source of truth.
-export const BUMPER_FRAMES = 45; // 1.5s @30fps
-export const ENDCARD_FRAMES = 75; // 2.5s @30fps
+// Sourced from the canonical layout config so the renderer and the chapter-
+// timestamp math (YouTube meta, #38) can never disagree on the bumper offset.
+export const BUMPER_FRAMES = DEFAULT_SCENE_TIMING.bumperFrames; // 1.5s @30fps
+export const ENDCARD_FRAMES = 75; // 2.5s @30fps (outro only; not scene-timing)
 
 // Channel chrome for the investment channel "決算図解室" (#58, confirmed).
 // The renderer itself stays domain-neutral so it can be reused for toys later
