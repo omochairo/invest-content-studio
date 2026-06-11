@@ -1,0 +1,51 @@
+name: phase2-jp-jules
+
+# Selective Jules deep-dive lane — REQUEST side (the "深い" half of the two-tier
+# plan: daily/volume = Gemini in phase2-jp.yml; ここぞの銘柄 = Jules here).
+#
+# For each selected TSE code it refreshes the CompanyProfile (so the Jules prompt
+# carries the current code-derived fact sheet), then dispatches ONE Jules session
+# per code. Jules researches the company deeply and opens an auto-PR adding
+# jules-research/<code>.prose.json (prose only — title + beats). The numbers and
+# visuals are NOT Jules's job; they are re-derived in code by the harvest step.
+#
+# After the Jules PR is merged, run phase2-jp.yml with gen_source=jules to harvest
+# that prose into a gated ContentPackage and render the mp4.
+#
+# The Jules quota is SHARED with omochairo (Pro 100/day, rolling 24h), so
+# request:jules:jp gates on recent creations (JULES_DAILY_CAP, default 80) and
+# no-ops when the shared budget is exhausted. Manual dispatch only (no schedule)
+# so this never auto-competes with omochairo's article generation.
+
+on:
+  workflow_dispatch:
+    inputs:
+      codes:
+        description: "TSE codes to deep-dive via Jules (space-separated), e.g. 6758 9984"
+        default: "6758"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  request:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Refresh CompanyProfile(s) so the Jules prompt has current fact sheets
+        env:
+          JQUANTS_API_KEY: ${{ secrets.JQUANTS_API_KEY }}
+          RADIKABUNAVI_API_KEY: ${{ secrets.RADIKABUNAVI_API_KEY }}
+          EDINETDB_API_KEY: ${{ secrets.EDINETDB_API_KEY }}
+        run: npm run fetch:jp -- ${{ github.event.inputs.codes }}
+      - name: Dispatch Jules deep-dive sessions (quota-gated, shared with omochairo)
+        env:
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+          JULES_DAILY_CAP: ${{ vars.JULES_DAILY_CAP || '80' }}
+        run: npm run request:jules:jp -- ${{ github.event.inputs.codes }}

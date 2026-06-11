@@ -190,7 +190,7 @@ function buildSectorRanking(p: CompanyProfile): Asset | null {
 }
 
 // ── beat plan: a fixed, code-owned scene<->asset binding ─────────────────
-interface BeatPlan {
+export interface BeatPlan {
   section: string;
   visualRef: string | null;
   /** What this beat should talk about (guides the model's prose, no numbers). */
@@ -198,7 +198,7 @@ interface BeatPlan {
 }
 
 /** Build the ordered beat plan, including a visual only if its asset exists. */
-function buildPlan(assets: Asset[]): BeatPlan[] {
+export function buildPlan(assets: Asset[]): BeatPlan[] {
   const has = (id: string) => assets.some((a) => a.id === id);
   const plan: BeatPlan[] = [
     { section: "イントロ", visualRef: null, focus: "誰の・何の解説かをひと言で。社名・業種・市場区分にふれてつかむ。" },
@@ -225,7 +225,7 @@ function buildPlan(assets: Asset[]): BeatPlan[] {
 }
 
 /** Formatted fact sheet — the ONLY numbers the model may put into prose. */
-function factSheet(p: CompanyProfile): string {
+export function factSheet(p: CompanyProfile): string {
   const f = p.financials;
   const lines = [
     `企業名: ${p.companyName}（証券コード ${p.code}）`,
@@ -270,7 +270,7 @@ function factSheet(p: CompanyProfile): string {
   return lines.join("\n");
 }
 
-type Beat = { narration: string; caption: string };
+export type Beat = { narration: string; caption: string };
 
 const RESPONSE_SCHEMA = {
   type: "object",
@@ -288,7 +288,7 @@ const RESPONSE_SCHEMA = {
   required: ["title", "beats"],
 };
 
-function buildPrompt(p: CompanyProfile, plan: BeatPlan[], retryNote = ""): string {
+export function buildPrompt(p: CompanyProfile, plan: BeatPlan[], retryNote = ""): string {
   const beats = plan
     .map((b, i) => `  ${i}) [章:${b.section}]${b.visualRef ? "（画面にデータ表示あり）" : ""} ${b.focus}`)
     .join("\n");
@@ -370,7 +370,7 @@ function buildSources(p: CompanyProfile): Source[] {
   return s.length ? s : [{ label: "EDINET（金融庁）", url: "https://disclosure2.edinet-fsa.go.jp/" }];
 }
 
-function assemble(p: CompanyProfile, assets: Asset[], plan: BeatPlan[], gen: { title: string; beats: Beat[] }): ContentPackage {
+export function assemble(p: CompanyProfile, assets: Asset[], plan: BeatPlan[], gen: { title: string; beats: Beat[] }): ContentPackage {
   const narration: NarrationLine[] = [];
   const scenes: Scene[] = [];
   plan.forEach((b, i) => {
@@ -392,8 +392,11 @@ function assemble(p: CompanyProfile, assets: Asset[], plan: BeatPlan[], gen: { t
   };
 }
 
-async function generate(p: CompanyProfile): Promise<ContentPackage> {
-  const assets = [
+/** The fixed, code-owned asset set (numbers never come from the model). Shared
+ *  by the Gemini path and the Jules deep-dive lane so both produce identical
+ *  visuals/numbers for a given profile. */
+export function buildAssets(p: CompanyProfile): Asset[] {
+  return [
     buildSegments(p),
     buildRevTrend(p),
     buildFinStats(p),
@@ -402,6 +405,10 @@ async function generate(p: CompanyProfile): Promise<ContentPackage> {
     buildSectorRanking(p),
     buildLatestYoy(p),
   ].filter((a): a is Asset => a !== null);
+}
+
+async function generate(p: CompanyProfile): Promise<ContentPackage> {
+  const assets = buildAssets(p);
   const plan = buildPlan(assets);
   let note = "";
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -442,8 +449,14 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error(err instanceof Error ? err.message : err);
-  process.exit(1);
-});
+// Only run when invoked directly (npm run generate:jp). When imported by the
+// Jules lane (request-jules-jp / harvest-jules-jp) for its shared core, this
+// guard prevents main() from auto-executing.
+const isEntry = process.argv[1] ? fileURLToPath(import.meta.url) === resolve(process.argv[1]) : false;
+if (isEntry) {
+  main().catch((err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}
 
