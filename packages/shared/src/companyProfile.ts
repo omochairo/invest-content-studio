@@ -69,6 +69,38 @@ export interface PeerComparison {
   source: { label: string; url: string };
 }
 
+/** One metric's rank within the company's own 33-sector (depth lever: ranking). */
+export interface RankMetric {
+  /** Display label, e.g. "営業利益率". */
+  label: string;
+  /** Unit suffix shown on values, e.g. "%" or "円". */
+  unit: string;
+  /** This company's value (from ラジ株ナビ, for in-video consistency). */
+  company: number | null;
+  /** 1-based rank within the sector (1 = highest), null when not rankable. */
+  rank: number | null;
+  /** Number of companies ranked for this metric (the denominator). */
+  outOf: number | null;
+}
+
+/**
+ * The company's position within its own 33-sector, sourced from edinetdb.jp's
+ * per-industry member list (`/v1/industries/{slug}`). Shown as a plain fact —
+ * "業種83社中 1位" with source — which is §2-safe (a factual rank, no buy/sell
+ * verdict and no rival tickers named). Null when the sector/company can't be
+ * matched or the free 100/day budget is exhausted (supplementary source).
+ */
+export interface SectorRanking {
+  /** edinetdb industry name (日本語, e.g. "輸送用機器"). */
+  industry: string;
+  /** edinetdb industry slug used for the lookup. */
+  industrySlug: string;
+  /** Total companies in the sector member list (context for the rank). */
+  universeSize: number | null;
+  metrics: RankMetric[];
+  source: { label: string; url: string };
+}
+
 export interface CompanyProfile {
   /** 4-digit TSE code, e.g. "7203". */
   code: string;
@@ -121,6 +153,9 @@ export interface CompanyProfile {
 
   /** Same-industry comparison (edinetdb.jp; null when unavailable). */
   peerComparison: PeerComparison | null;
+
+  /** Rank within the company's own sector (edinetdb.jp; null when unavailable). */
+  sectorRanking: SectorRanking | null;
 
   /** TSE-official market price (J-Quants free is ~12 weeks delayed). */
   price: {

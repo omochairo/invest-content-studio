@@ -19,7 +19,8 @@
  *   (3) 構造の可視化  — reportable-segment breakdown (the project's weapon).
  *   (4) 投資家の視点  — general-knowledge education frame (e.g. PBR<1の一般的意味).
  *
- * Env: GEMINI_API_KEY (required), GEMINI_MODEL (default gemini-2.5-flash).
+ * Env: GEMINI_API_KEY (required), GEMINI_MODEL (default gemini-2.5-flash;
+ *   falls back to gemini-2.5-flash-lite on per-day quota exhaustion).
  * Run from repo root: `npm run generate:jp -- 7203`  (reads outputs/equities/7203.json)
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -170,6 +171,22 @@ function buildPeerComparison(p: CompanyProfile): Asset | null {
   return { id: "peers", type: "stats", spec: { kind: "stats", items } };
 }
 
+/** Sector ranking: the company's position within its own 33-sector (lever 2b). */
+function buildSectorRanking(p: CompanyProfile): Asset | null {
+  const sr = p.sectorRanking;
+  if (!sr) return null;
+  const fmt = (v: number, unit: string) => (unit === "%" ? pct1(v) : unit === "円" ? jpyAuto(v) : `${f1(v)}${unit}`);
+  const items = sr.metrics
+    .filter((m) => m.rank != null && m.outOf != null)
+    .map((m) => ({
+      label: m.label,
+      value: `${m.rank}位 / ${m.outOf}社`,
+      note: m.company != null ? fmt(m.company, m.unit) : null,
+    }));
+  if (items.length === 0) return null;
+  return { id: "ranking", type: "stats", spec: { kind: "stats", items } };
+}
+
 // ── beat plan: a fixed, code-owned scene<->asset binding ─────────────────
 interface BeatPlan {
   section: string;
@@ -197,6 +214,8 @@ function buildPlan(assets: Asset[]): BeatPlan[] {
     plan.push({ section: "評価", visualRef: "valuation", focus: "PER・PBRを『市場ではこう評価されている』と事実として提示。PBR1倍割れ等は資本効率の改善が期待される水準といった一般論の教育枠で意味づけ（レバー4）。割安/割高の断定や売買の示唆はしない。" });
   if (has("peers"))
     plan.push({ section: "同業比較", visualRef: "peers", focus: "主要指標を同じ業種の平均と並べて、この会社が業種内でどの位置にあるかを事実として示す（レバー2＝同業/市場比較）。出典は業種平均データ。優劣の断定や売買の示唆はせず、『業種平均と比べてこうなっている』と中立に述べる。" });
+  if (has("ranking"))
+    plan.push({ section: "業種内ランキング", visualRef: "ranking", focus: "主要指標が同じ業種の中で何位かを、対象社数とともに事実として示す（レバー2＝業種内の立ち位置）。出典は業種内ランキングデータ。『業種◯社中◯位』と中立に述べ、優劣の断定・将来予測・売買の示唆はしない。順位の高低を良し悪しと決めつけない。" });
   plan.push({ section: "リスク", visualRef: null, focus: "注意して見るべき一般的論点（為替変動・投資負担・競争環境など）。特定銘柄への売買判断は示さない。" });
   plan.push({ section: "まとめ", visualRef: null, focus: "ここまでをデータ上の人物像として中立に要約。" });
   plan.push({ section: "まとめ", visualRef: null, focus: "『数値の詳細と出典は概要欄をご確認ください。投資判断はご自身で行ってください。』に相当する締め。" });
@@ -237,6 +256,14 @@ function factSheet(p: CompanyProfile): string {
       .join(" / ");
     if (cmp)
       lines.push(`同業比較（業種「${pc.industry}」${pc.sampleSize ? ` ${pc.sampleSize}社` : ""}, 出典 edinetdb.jp）: ${cmp}`);
+  }
+  const sr = p.sectorRanking;
+  if (sr) {
+    const rk = sr.metrics
+      .filter((m) => m.rank != null && m.outOf != null)
+      .map((m) => `${m.label} ${m.outOf}社中${m.rank}位`)
+      .join(" / ");
+    if (rk) lines.push(`業種内ランキング（業種「${sr.industry}」, 出典 edinetdb.jp）: ${rk}`);
   }
   return lines.join("\n");
 }
@@ -294,28 +321,46 @@ ${retryNote}`;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Models tried in order. The free tier's request quota is PER MODEL PER DAY
+// (gemini-2.5-flash is 20/day), so when the primary model's daily quota is
+// exhausted we fall back to gemini-2.5-flash-lite, which draws from a separate
+// bucket. Transient 429/500/503 (load) still back off and retry on the same
+// model first; only a per-DAY exhaustion jumps straight to the next model.
+const FALLBACK_MODEL = "gemini-2.5-flash-lite";
+const MODELS = MODEL === FALLBACK_MODEL ? [MODEL] : [MODEL, FALLBACK_MODEL];
+
 async function callGemini(prompt: string): Promise<{ title: string; beats: Beat[] }> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}`;
   const body = JSON.stringify({
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: { responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA, temperature: 0.6 },
   });
-  // Gemini's free tier returns transient 429/500/503 under load — back off and retry.
-  for (let attempt = 1; ; attempt++) {
-    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body });
-    if (res.ok) {
-      const data = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) throw new Error("Gemini: empty response");
-      return JSON.parse(text) as { title: string; beats: Beat[] };
+  let lastErr = "";
+  for (const model of MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${KEY}`;
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+      if (res.ok) {
+        const data = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) throw new Error("Gemini: empty response");
+        return JSON.parse(text) as { title: string; beats: Beat[] };
+      }
+      const detail = (await res.text()).slice(0, 1500);
+      lastErr = `${model} HTTP ${res.status}: ${detail}`;
+      // Per-day quota won't recover within this run — switch models immediately.
+      const dailyExhausted = res.status === 429 && /per\s*day|RequestsPerDay|PerProjectPerModel/i.test(detail);
+      const retryable = res.status === 429 || res.status === 500 || res.status === 503;
+      if (dailyExhausted) {
+        console.log(`  Gemini ${model}: daily quota exhausted — falling back to next model`);
+        break;
+      }
+      if (!retryable || attempt >= 4) throw new Error(`Gemini -> ${lastErr}`);
+      const wait = 2000 * attempt;
+      console.log(`  Gemini ${model} HTTP ${res.status} (attempt ${attempt}/4) — retrying in ${wait}ms`);
+      await sleep(wait);
     }
-    const retryable = res.status === 429 || res.status === 500 || res.status === 503;
-    const detail = (await res.text()).slice(0, 1500);
-    if (!retryable || attempt >= 4) throw new Error(`Gemini -> HTTP ${res.status}: ${detail}`);
-    const wait = 2000 * attempt;
-    console.log(`  Gemini HTTP ${res.status} (attempt ${attempt}/3) — retrying in ${wait}ms`);
-    await sleep(wait);
   }
+  throw new Error(`Gemini exhausted all models (${MODELS.join(", ")}): ${lastErr}`);
 }
 
 function buildSources(p: CompanyProfile): Source[] {
@@ -352,6 +397,7 @@ async function generate(p: CompanyProfile): Promise<ContentPackage> {
     buildFinStats(p),
     buildValuation(p),
     buildPeerComparison(p),
+    buildSectorRanking(p),
     buildLatestYoy(p),
   ].filter((a): a is Asset => a !== null);
   const plan = buildPlan(assets);
