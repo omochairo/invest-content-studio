@@ -45,6 +45,8 @@ const STILLS = [
   { comp: "LongFormExplainer", frame: 350, name: "long-form-line" },
   { comp: "LongFormExplainer", frame: 450, name: "long-form-stats" },
   { comp: "LongFormExplainer", frame: 550, name: "long-form-bar" },
+  // YouTube thumbnail (#37): static still, so the only frame is 0.
+  { comp: "Thumbnail", frame: 0, name: "thumbnail" },
 ];
 
 // Fail when more than this fraction of pixels differ. ~0 in a matched env; the
