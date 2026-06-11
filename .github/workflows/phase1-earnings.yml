@@ -2,35 +2,47 @@ name: phase1-earnings
 
 # Phase 1 end-to-end in CI (execution host = GitHub Actions, see SPEC/AGENTS).
 # fetch (FMP) -> generate (Gemini Flash) -> validate+compliance gate ->
-# VOICEVOX TTS (docker service) -> Remotion render -> mp4 artifact.
+# VOICEVOX TTS (docker service) -> Remotion render -> mp4 artifact -> YouTube.
 # VOICEVOX runs as a service container so CI is self-contained (the NAS engine
-# is unreachable from cloud runners). Dispatch-only for now; 1f adds a schedule.
-# (workflow_dispatch needs this file on the default branch — merge before using.)
+# is unreachable from cloud runners).
+#
+# 1f daily cron: the schedule run auto-selects the freshest unpublished earnings
+# (pick-symbol.ts), renders, uploads PRIVATE (Google audit pending forces it),
+# and commits state/published.json so the same event isn't re-uploaded.
+# Manual dispatch: symbol="auto" exercises the same selector; a literal ticker
+# renders that one. render=false stops after the compliance gate (cheap smoke
+# test of selection + generation without spending VOICEVOX/Remotion time).
+# (a new schedule/dispatch only takes effect once this file is on the default branch.)
 
 on:
+  schedule:
+    # 22:00 UTC = 07:00 JST — after US after-close earnings have settled in FMP.
+    - cron: "0 22 * * *"
   workflow_dispatch:
     inputs:
       symbol:
-        description: "Ticker symbol to render (must be on the watchlist coverage)"
-        default: "NVDA"
+        description: "Ticker, or 'auto' to run the daily selector over the watchlist"
+        default: "auto"
         required: true
       publish:
         description: "Upload to YouTube (unlisted; unaudited projects land it private until audit)"
         type: boolean
         default: false
+      render:
+        description: "Run TTS + Remotion render (off = stop after the compliance gate)"
+        type: boolean
+        default: true
 
 concurrency:
   group: phase1-earnings-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write # schedule run commits the published ledger back to main
 
 jobs:
   earnings-video:
     runs-on: ubuntu-22.04
-    env:
-      SYMBOL: ${{ github.event.inputs.symbol || 'NVDA' }}
     services:
       voicevox:
         # Pin to the same engine version as the NAS (0.25.2) so the speaker-id
@@ -60,20 +72,51 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Resolve the target ticker and the publish/render mode in one place.
+      # schedule -> selector + publish + render (the daily private upload).
+      # dispatch  -> 'auto' runs the selector; a literal ticker skips it.
+      # An empty result (no fresh, unpublished earnings) makes the rest a no-op.
+      - name: Resolve symbol + mode
+        id: resolve
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          IN_SYMBOL: ${{ github.event.inputs.symbol }}
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || [ -z "$IN_SYMBOL" ] || [ "$IN_SYMBOL" = "auto" ]; then
+            npm run pick
+            CHOSEN=$(cat outputs/chosen-symbol.txt 2>/dev/null || true)
+          else
+            CHOSEN="$IN_SYMBOL"
+          fi
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            PUBLISH=true; RENDER=true
+          else
+            PUBLISH="${{ inputs.publish }}"; RENDER="${{ inputs.render }}"
+          fi
+          echo "Resolved symbol='${CHOSEN:-<none>}' publish=$PUBLISH render=$RENDER"
+          echo "symbol=$CHOSEN" >> "$GITHUB_OUTPUT"
+          echo "SYMBOL=$CHOSEN" >> "$GITHUB_ENV"
+          echo "PUBLISH=$PUBLISH" >> "$GITHUB_ENV"
+          echo "RENDER=$RENDER" >> "$GITHUB_ENV"
+
       - name: 1a Fetch earnings (FMP)
+        if: steps.resolve.outputs.symbol != ''
         env:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
         run: npm run fetch -- "$SYMBOL"
 
       - name: 1b Generate ContentPackage (Gemini Flash)
+        if: steps.resolve.outputs.symbol != ''
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: npm run generate -- "$SYMBOL"
 
       - name: 1c Quality + compliance gate
+        if: steps.resolve.outputs.symbol != ''
         run: npm run check -- "outputs/content/$SYMBOL.json"
 
       - name: Wait for VOICEVOX engine
+        if: steps.resolve.outputs.symbol != '' && env.RENDER == 'true'
         run: |
           for i in $(seq 1 60); do
             if curl -sf http://localhost:50021/version; then
@@ -84,11 +127,13 @@ jobs:
           echo "VOICEVOX did not become ready"; exit 1
 
       - name: 1d TTS (VOICEVOX)
+        if: steps.resolve.outputs.symbol != '' && env.RENDER == 'true'
         env:
           VOICEVOX_URL: http://localhost:50021
         run: npm run tts -- "outputs/content/$SYMBOL.json"
 
       - name: 1d Render mp4 (Remotion)
+        if: steps.resolve.outputs.symbol != '' && env.RENDER == 'true'
         working-directory: packages/video-generator
         run: |
           # Wrap the bare ContentPackage into { pkg, manifest } — passing it raw
@@ -99,19 +144,33 @@ jobs:
             --props=out/render-props.json
 
       - name: Upload mp4 artifact
+        if: steps.resolve.outputs.symbol != '' && env.RENDER == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: earnings-${{ env.SYMBOL }}-mp4
+          name: earnings-${{ steps.resolve.outputs.symbol }}-mp4
           path: |
-            packages/video-generator/out/${{ env.SYMBOL }}.mp4
-            outputs/earnings/${{ env.SYMBOL }}.json
-            outputs/content/${{ env.SYMBOL }}.json
+            packages/video-generator/out/${{ steps.resolve.outputs.symbol }}.mp4
+            outputs/earnings/${{ steps.resolve.outputs.symbol }}.json
+            outputs/content/${{ steps.resolve.outputs.symbol }}.json
           if-no-files-found: error
 
       - name: 1e Upload to YouTube (unlisted)
-        if: ${{ inputs.publish }}
+        if: steps.resolve.outputs.symbol != '' && env.PUBLISH == 'true' && env.RENDER == 'true'
         env:
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
         run: npm run yt:upload -- "$SYMBOL"
+
+      # 1f: only the scheduled private upload records dedup state, and only after
+      # the upload step actually ran. Commit the ledger back so tomorrow's
+      # selector skips this event. Schedule runs on the default branch.
+      - name: 1f Record published + commit ledger
+        if: github.event_name == 'schedule' && steps.resolve.outputs.symbol != ''
+        run: |
+          npm run mark:published -- "$SYMBOL"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/published.json
+          git diff --cached --quiet || git commit -m "chore(1f): mark $SYMBOL published [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}
