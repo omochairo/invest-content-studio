@@ -176,12 +176,14 @@ function buildSectorRanking(p: CompanyProfile): Asset | null {
   const sr = p.sectorRanking;
   if (!sr) return null;
   const fmt = (v: number, unit: string) => (unit === "%" ? pct1(v) : unit === "円" ? jpyAuto(v) : `${f1(v)}${unit}`);
+  // Rank is the hero value (e.g. "1位"); the denominator + own value go in the
+  // note so the big number stays on one line in the StatGrid card.
   const items = sr.metrics
     .filter((m) => m.rank != null && m.outOf != null)
     .map((m) => ({
       label: m.label,
-      value: `${m.rank}位 / ${m.outOf}社`,
-      note: m.company != null ? fmt(m.company, m.unit) : null,
+      value: `${m.rank}位`,
+      note: `${m.outOf}社中${m.company != null ? ` / ${fmt(m.company, m.unit)}` : ""}`,
     }));
   if (items.length === 0) return null;
   return { id: "ranking", type: "stats", spec: { kind: "stats", items } };
