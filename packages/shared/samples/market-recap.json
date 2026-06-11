@@ -1,40 +1,65 @@
 {
   "meta": {
-    "title": "今日のマーケットまとめ（サンプル）",
+    "title": "エヌビディア 決算速報（サンプル）",
     "lang": "ja",
     "format": "short",
     "disclaimer": "本コンテンツは情報提供を目的としたもので、特定の金融商品の売買を推奨・勧誘するものではありません。投資判断はご自身の責任で行ってください。",
     "sources": [
-      { "label": "日本取引所グループ 相場情報", "url": "https://www.jpx.co.jp/" },
-      { "label": "CoinGecko（暗号資産価格）", "url": "https://www.coingecko.com/" }
+      { "label": "SEC EDGAR 8-K（一次情報）", "url": "https://www.sec.gov/" },
+      { "label": "Financial Modeling Prep", "url": "https://financialmodelingprep.com/" }
     ]
   },
   "narration": [
-    { "text": "今日の主要マーケットを、30秒で振り返ります。" },
-    { "text": "日経平均株価は、前日比プラス1.2パーセントで取引を終えました。" },
-    { "text": "為替市場では、1ドルおよそ150円台で推移しています。" },
-    { "text": "暗号資産のビットコインは、前日比マイナス2.0パーセントとなりました。" },
-    { "text": "数値はサンプルです。詳しくは概要欄の出典をご確認ください。投資判断はご自身で。" }
+    { "text": "エヌビディアの最新の決算速報を、30秒で振り返ります。" },
+    { "text": "EPS、売上、株価の実績は、画面のとおり開示されました。" },
+    { "text": "EPS・売上はいずれも市場予想を上回り、株価も本日プラスで推移しています。" },
+    { "text": "売上は直近の四半期にかけて、データ上は増加の方向が続いています。" },
+    { "text": "数値はサンプルです。詳細と出典は概要欄をご確認ください。投資判断はご自身で。" }
   ],
   "scenes": [
-    { "narrationIndex": 0, "caption": "今日のマーケットまとめ", "visualRef": null },
-    { "narrationIndex": 1, "caption": "日経平均 +1.2%", "visualRef": "daily-change" },
-    { "narrationIndex": 2, "caption": "ドル円 150円台", "visualRef": "daily-change" },
-    { "narrationIndex": 3, "caption": "ビットコイン -2.0%", "visualRef": "daily-change" },
+    { "narrationIndex": 0, "caption": "エヌビディア 決算速報", "visualRef": null },
+    { "narrationIndex": 1, "caption": "主要な実績", "visualRef": "headline" },
+    { "narrationIndex": 2, "caption": "予想比と本日の値動き", "visualRef": "reaction" },
+    { "narrationIndex": 3, "caption": "売上の推移", "visualRef": "rev-trend" },
     { "narrationIndex": 4, "caption": "出典は概要欄へ", "visualRef": null }
   ],
   "assets": [
     {
-      "id": "daily-change",
+      "id": "headline",
+      "type": "stats",
+      "spec": {
+        "kind": "stats",
+        "items": [
+          { "label": "EPS（実績）", "value": "$5.16", "note": "予想 $4.64" },
+          { "label": "売上（実績）", "value": "$60.9B", "note": "予想 $57.9B" },
+          { "label": "株価（終値）", "value": "$131.26", "note": "本日比 +2.1%" }
+        ]
+      }
+    },
+    {
+      "id": "reaction",
       "type": "chart",
       "spec": {
         "kind": "bar",
         "unit": "%",
         "bars": [
-          { "label": "日経平均", "value": 1.2 },
-          { "label": "S&P500", "value": 0.5 },
-          { "label": "ドル円", "value": 0.3 },
-          { "label": "ビットコイン", "value": -2.0 }
+          { "label": "EPS 予想比", "value": 11.2 },
+          { "label": "売上 予想比", "value": 5.2 },
+          { "label": "株価 本日比", "value": 2.1 }
+        ]
+      }
+    },
+    {
+      "id": "rev-trend",
+      "type": "line",
+      "spec": {
+        "kind": "line",
+        "unit": "B$",
+        "points": [
+          { "label": "25/04", "value": 26.0 },
+          { "label": "25/07", "value": 35.1 },
+          { "label": "25/10", "value": 47.5 },
+          { "label": "26/01", "value": 60.9 }
         ]
       }
     }
