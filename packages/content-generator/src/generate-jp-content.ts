@@ -67,27 +67,46 @@ const signedPct1 = (n: number) => `${n >= 0 ? "+" : ""}${f1(n)}%`;
 const fyLabel = (end: string) => `FY${end.slice(2, 4)}`;
 
 // ── segment 日本語化: English XBRL reportable-segment tag -> JP label ──────
+// Exact-tag overrides win; otherwise the CamelCase tag is tokenized and each
+// token mapped, so compound names survive instead of leaking raw English into
+// the narration/chart (e.g. GameAndNetworkServices -> ゲーム＆ネットワークサービス).
+// Gemini happens to re-Japanize in prose, but Jules keeps the fact-sheet data
+// verbatim, so the JP label has to be correct at the source for both paths.
 const SEGMENT_JA: Record<string, string> = {
   AutomotiveReportableSegment: "自動車",
   FinancialServicesReportableSegment: "金融",
   OtherReportableSegments: "その他",
   OtherReportableSegment: "その他",
 };
-const SEGMENT_WORDS: [RegExp, string][] = [
-  [/Automotive/i, "自動車"],
-  [/FinancialServices|Financial/i, "金融"],
-  [/Electronics?/i, "エレクトロニクス"],
-  [/Machinery/i, "機械"],
-  [/Chemicals?/i, "化学"],
-  [/Healthcare/i, "ヘルスケア"],
-  [/Pharmaceutical/i, "医薬品"],
-  [/Energy/i, "エネルギー"],
-  [/Other/i, "その他"],
-];
+// Per-token dictionary for the tokenizing fallback (lower-cased keys).
+const SEGMENT_TOKEN_JA: Record<string, string> = {
+  and: "＆",
+  game: "ゲーム", network: "ネットワーク", music: "音楽",
+  picture: "映画", pictures: "映画", movie: "映画", film: "映画",
+  entertainment: "エンタテインメント", technology: "テクノロジー",
+  imaging: "イメージング", sensing: "センシング",
+  service: "サービス", services: "サービス",
+  solution: "ソリューション", solutions: "ソリューション",
+  financial: "金融", automotive: "自動車",
+  electronics: "エレクトロニクス", electronic: "エレクトロニクス",
+  machinery: "機械", chemical: "化学", chemicals: "化学",
+  healthcare: "ヘルスケア", pharmaceutical: "医薬品", pharmaceuticals: "医薬品",
+  energy: "エネルギー", semiconductor: "半導体", semiconductors: "半導体",
+  mobile: "モバイル", communication: "通信", communications: "通信",
+  other: "その他", others: "その他",
+};
+// Generic filler tokens dropped from the tokenized label.
+const SEGMENT_DROP = new Set(["reportable", "segment", "segments", "business", "businesses", "the"]);
 function segmentJa(tag: string): string {
   if (SEGMENT_JA[tag]) return SEGMENT_JA[tag];
-  for (const [re, ja] of SEGMENT_WORDS) if (re.test(tag)) return ja;
-  return tag.replace(/ReportableSegments?$/i, "").replace(/Segment$/i, "") || tag;
+  const tokens = tag
+    .replace(/ReportableSegments?$/i, "")
+    .replace(/Segment$/i, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2") // split CamelCase boundaries
+    .split(/[\s_]+/)
+    .filter((t) => t && !SEGMENT_DROP.has(t.toLowerCase()));
+  const ja = tokens.map((t) => SEGMENT_TOKEN_JA[t.toLowerCase()] ?? t).join("");
+  return ja || tag;
 }
 
 // ── code-side asset builders (return null when the data is absent) ────────
