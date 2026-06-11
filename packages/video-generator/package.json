@@ -9,7 +9,8 @@
     "still": "remotion still src/index.ts MarketRecap out/still.png",
     "still:thumb": "remotion still src/index.ts Thumbnail out/thumb.png",
     "test:visual": "node scripts/visual-regression.mjs",
-    "test:visual:update": "node scripts/visual-regression.mjs --update"
+    "test:visual:update": "node scripts/visual-regression.mjs --update",
+    "test:audio": "tsx --test src/audioMix.test.ts"
   },
   "dependencies": {
     "@ics/shared": "*",
