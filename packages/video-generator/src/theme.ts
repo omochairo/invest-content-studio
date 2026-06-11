@@ -62,11 +62,21 @@ export function formatBarValue(
   return `${sign}${value.toFixed(1)}${unit ?? ""}`;
 }
 
-export const SCENE_FADE_FRAMES = 15;
+// Intra-scene cross-dissolve length. MUST stay <= the PAD_MS silence appended
+// after each narration clip (PAD_MS=350ms ≈ 10.5f @30fps), so the fade-out sits
+// in silence and never clips speech. See #35 design invariant B (audio sync).
+export const SCENE_FADE_FRAMES = 8;
 
+// Brand sequences (silent, additive, fixed-length). Imported by Root.tsx so the
+// total-duration math (calculateMetadata) shares a single source of truth.
+export const BUMPER_FRAMES = 45; // 1.5s @30fps
+export const ENDCARD_FRAMES = 75; // 2.5s @30fps
+
+// Channel chrome (domain-neutral on purpose: the same renderer serves toys too,
+// so no investment vocabulary here). channelName is a placeholder — confirm.
 export const BRAND = {
   channelName: "IC Studio",
-  tagline: "Data-Driven Insights",
-  ctaPrimary: "Subscribe for More",
-  ctaSecondary: "Details and sources in the description.",
+  tagline: "データで読み解く",
+  ctaPrimary: "チャンネル登録で最新をチェック",
+  ctaSecondary: "詳細・出典は概要欄から",
 };
