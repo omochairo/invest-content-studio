@@ -5,6 +5,13 @@ import longFormSample from "@ics/shared/samples/long-form-explainer.json";
 import { MarketRecap } from "./MarketRecap";
 import { LongFormExplainer } from "./LongFormExplainer";
 import { Thumbnail } from "./Thumbnail";
+import { BUMPER_FRAMES, ENDCARD_FRAMES } from "./theme";
+
+/** Intro bumper + outro end card are silent, fixed-length sequences prepended/
+ *  appended to every video (#35). They add a constant to the audio-derived
+ *  scene total; the per-scene narration timing is unchanged. Kept here so the
+ *  duration math and the compositions share the same constants (theme.ts). */
+const BRAND_FRAMES = BUMPER_FRAMES + ENDCARD_FRAMES;
 
 const FPS = 30;
 /** Breathing room appended after each spoken line (kept in sync with MarketRecap). */
@@ -41,11 +48,11 @@ export const RemotionRoot = () => {
           } catch {
             manifest = null;
           }
-          const durationInFrames = manifest
+          const sceneTotal = manifest
             ? manifest.clips.reduce((sum, c) => sum + sceneFrames(c.durationMs), 0)
             : props.pkg.scenes.length * sceneFrames(EST_MS);
           return {
-            durationInFrames: Math.max(durationInFrames, 1),
+            durationInFrames: Math.max(BRAND_FRAMES + sceneTotal, 1),
             props: { ...props, manifest },
           };
         }}
@@ -74,12 +81,12 @@ export const RemotionRoot = () => {
           // matches what LongFormExplainer actually lays out (Series.Sequence).
           const clipFor = (narrationIndex: number) =>
             manifest?.clips.find((c) => c.index === narrationIndex);
-          const durationInFrames = props.pkg.scenes.reduce(
+          const sceneTotal = props.pkg.scenes.reduce(
             (sum, s) => sum + sceneFrames(clipFor(s.narrationIndex)?.durationMs ?? EST_MS),
             0,
           );
           return {
-            durationInFrames: Math.max(durationInFrames, 1),
+            durationInFrames: Math.max(BRAND_FRAMES + sceneTotal, 1),
             props: { ...props, manifest },
           };
         }}

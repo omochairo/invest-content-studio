@@ -36,15 +36,26 @@ const DIFF_DIR = join(ROOT, "out", "visual", "diff");
 // Fixed still set. Frames chosen to sit inside a settled scene that exercises a
 // specific visual kind (see MarketRecap/LongFormExplainer scene order). Keep
 // names stable — they are the baseline filenames.
+//
+// #35 added a silent BUMPER_FRAMES(=45) intro bumper before scene 0, so every
+// scene still's absolute frame is its old value + 45 (it lands at the identical
+// scene-local position; the SceneTransition wrapper is opacity 1 there, so the
+// scene baselines are unchanged). Bumper/end-card stills are new: bumper frames
+// sit mid-intro (past the 8f fade-in); end-card frames sit mid-outro, whose
+// absolute start = 45 + sceneTotal (MarketRecap 5 scenes -> 550, LongForm 9 -> 954).
 const STILLS = [
-  { comp: "MarketRecap", frame: 60, name: "market-recap-caption" },
-  { comp: "MarketRecap", frame: 161, name: "market-recap-stats" },
-  { comp: "MarketRecap", frame: 262, name: "market-recap-bar" },
-  { comp: "MarketRecap", frame: 363, name: "market-recap-line" },
-  { comp: "LongFormExplainer", frame: 60, name: "long-form-intro" },
-  { comp: "LongFormExplainer", frame: 350, name: "long-form-line" },
-  { comp: "LongFormExplainer", frame: 450, name: "long-form-stats" },
-  { comp: "LongFormExplainer", frame: 550, name: "long-form-bar" },
+  { comp: "MarketRecap", frame: 22, name: "market-recap-bumper" },
+  { comp: "MarketRecap", frame: 105, name: "market-recap-caption" },
+  { comp: "MarketRecap", frame: 206, name: "market-recap-stats" },
+  { comp: "MarketRecap", frame: 307, name: "market-recap-bar" },
+  { comp: "MarketRecap", frame: 408, name: "market-recap-line" },
+  { comp: "MarketRecap", frame: 587, name: "market-recap-endcard" },
+  { comp: "LongFormExplainer", frame: 22, name: "long-form-bumper" },
+  { comp: "LongFormExplainer", frame: 105, name: "long-form-intro" },
+  { comp: "LongFormExplainer", frame: 395, name: "long-form-line" },
+  { comp: "LongFormExplainer", frame: 495, name: "long-form-stats" },
+  { comp: "LongFormExplainer", frame: 595, name: "long-form-bar" },
+  { comp: "LongFormExplainer", frame: 991, name: "long-form-endcard" },
   // YouTube thumbnail (#37): static still, so the only frame is 0.
   { comp: "Thumbnail", frame: 0, name: "thumbnail" },
 ];

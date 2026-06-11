@@ -12,7 +12,8 @@ import { type Asset, findAsset } from "@ics/shared";
 import { EST_MS, type MarketRecapProps, PAD_MS } from "./Root";
 import { Visual } from "./Visual";
 import { HeroCaption, Telop } from "./Caption";
-import { bgGradient, toneForAsset } from "./theme";
+import { Bumper, EndCard, SceneTransition } from "./Brand";
+import { BUMPER_FRAMES, bgGradient, ENDCARD_FRAMES, toneForAsset } from "./theme";
 
 const { fontFamily } = loadFont("normal", {
   weights: ["400", "700", "800"],
@@ -31,6 +32,10 @@ export const LongFormExplainer = ({ pkg, manifest }: MarketRecapProps) => {
   return (
     <AbsoluteFill style={{ backgroundColor: BG, fontFamily }}>
       <Series>
+        {/* Intro bumper (#35): silent, fixed-length, faded by the component. */}
+        <Series.Sequence durationInFrames={BUMPER_FRAMES}>
+          <Bumper title={pkg.meta.title} durationInFrames={BUMPER_FRAMES} />
+        </Series.Sequence>
         {pkg.scenes.map((scene, i) => {
           const clip = clipFor(scene.narrationIndex);
           const durMs = (clip?.durationMs ?? EST_MS) + PAD_MS;
@@ -38,16 +43,24 @@ export const LongFormExplainer = ({ pkg, manifest }: MarketRecapProps) => {
           const asset = findAsset(pkg, scene.visualRef);
           return (
             <Series.Sequence durationInFrames={frames} key={i}>
-              <SceneView
-                title={pkg.meta.title}
-                section={scene.section ?? null}
-                caption={scene.caption}
-                asset={asset}
-              />
+              {/* Cross-dissolve the visuals only; Audio stays outside the fade
+                  so narration is never attenuated (#35 invariant B). */}
+              <SceneTransition durationInFrames={frames}>
+                <SceneView
+                  title={pkg.meta.title}
+                  section={scene.section ?? null}
+                  caption={scene.caption}
+                  asset={asset}
+                />
+              </SceneTransition>
               {clip ? <Audio src={staticFile(clip.file)} /> : null}
             </Series.Sequence>
           );
         })}
+        {/* Outro end card (#35): silent CTA, faded by the component. */}
+        <Series.Sequence durationInFrames={ENDCARD_FRAMES}>
+          <EndCard durationInFrames={ENDCARD_FRAMES} />
+        </Series.Sequence>
       </Series>
       <Disclaimer text={pkg.meta.disclaimer} />
     </AbsoluteFill>
