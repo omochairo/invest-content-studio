@@ -91,8 +91,12 @@ jobs:
       - name: 1d Render mp4 (Remotion)
         working-directory: packages/video-generator
         run: |
+          # Wrap the bare ContentPackage into { pkg, manifest } — passing it raw
+          # silently renders the sample (see scripts/render-props.mjs).
+          node scripts/render-props.mjs \
+            "$GITHUB_WORKSPACE/outputs/content/$SYMBOL.json" out/render-props.json
           npx remotion render src/index.ts MarketRecap "out/$SYMBOL.mp4" \
-            --props="$GITHUB_WORKSPACE/outputs/content/$SYMBOL.json"
+            --props=out/render-props.json
 
       - name: Upload mp4 artifact
         uses: actions/upload-artifact@v4
