@@ -38,9 +38,15 @@ export const SceneTransition: React.FC<{
   );
 };
 
-export const Bumper: React.FC<{ title: string }> = ({ title }) => {
+// durationInFrames is the BUMPER's own sequence length, passed by the caller.
+// (useVideoConfig().durationInFrames returns the whole composition length inside
+// a Sequence, so the fade-out must be driven by an explicit prop instead.)
+export const Bumper: React.FC<{ title: string; durationInFrames: number }> = ({
+  title,
+  durationInFrames,
+}) => {
   const frame = useCurrentFrame();
-  const { width, height, durationInFrames } = useVideoConfig();
+  const { width, height } = useVideoConfig();
 
   const min = Math.min(width, height);
   const sizeChannel = Math.max(32, min * 0.07);
@@ -111,9 +117,12 @@ export const Bumper: React.FC<{ title: string }> = ({ title }) => {
   );
 };
 
-export const EndCard: React.FC = () => {
+// durationInFrames is the END CARD's own sequence length (see Bumper note).
+export const EndCard: React.FC<{ durationInFrames: number }> = ({
+  durationInFrames,
+}) => {
   const frame = useCurrentFrame();
-  const { width, height, durationInFrames } = useVideoConfig();
+  const { width, height } = useVideoConfig();
 
   const min = Math.min(width, height);
   const sizePrimary = Math.max(28, min * 0.065);
