@@ -61,3 +61,12 @@ export function formatBarValue(
   const sign = signed && value >= 0 ? "+" : "";
   return `${sign}${value.toFixed(1)}${unit ?? ""}`;
 }
+
+export const SCENE_FADE_FRAMES = 15;
+
+export const BRAND = {
+  channelName: "IC Studio",
+  tagline: "Data-Driven Insights",
+  ctaPrimary: "Subscribe for More",
+  ctaSecondary: "Details and sources in the description.",
+};
