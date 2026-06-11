@@ -10,7 +10,8 @@
     "still:thumb": "remotion still src/index.ts Thumbnail out/thumb.png",
     "test:visual": "node scripts/visual-regression.mjs",
     "test:visual:update": "node scripts/visual-regression.mjs --update",
-    "test:audio": "tsx --test src/audioMix.test.ts"
+    "test:audio": "tsx --test src/audioMix.test.ts",
+    "gen:bed": "node scripts/gen-placeholder-bed.mjs"
   },
   "dependencies": {
     "@ics/shared": "*",
