@@ -101,13 +101,76 @@ export interface StatGridSpec {
   items: StatItem[];
 }
 
+/** One slice of a donut (e.g. a revenue segment, a category share). */
+export interface DonutSegment {
+  label: string;
+  /** Raw magnitude. The renderer normalizes the segments to a total, so the
+   *  generator may emit either absolute amounts or pre-computed shares. */
+  value: number;
+}
+
+/** Declarative composition (part-to-whole) spec, drawn as a donut. The
+ *  renderer derives each arc from value / sum(values) — it never assumes the
+ *  values already sum to 100, so this stays domain-agnostic. */
+export interface DonutSpec {
+  kind: "donut";
+  /** Unit suffix shown on legend values, e.g. "%" or "億円". */
+  unit?: string;
+  segments: DonutSegment[];
+  /** Optional label inside the ring (e.g. a total). Text-only; the renderer
+   *  never reformats a load-bearing number, so pass it pre-formatted. */
+  centerLabel?: string | null;
+}
+
+/** One bar in a waterfall (bridge) chart. */
+export interface WaterfallStep {
+  label: string;
+  /** A signed delta by default (added to the running cumulative). When
+   *  `isTotal` is true this is an absolute value drawn from the baseline
+   *  (e.g. an opening/closing total), not a delta. */
+  value: number;
+  /** True = an absolute total/subtotal column sitting on the baseline. */
+  isTotal?: boolean;
+}
+
+/** Declarative increment/decrement decomposition, drawn as a waterfall. The
+ *  renderer tracks the running cumulative and colors deltas by sign (up/down);
+ *  no domain meaning is attached to the direction. */
+export interface WaterfallSpec {
+  kind: "waterfall";
+  /** Unit suffix shown on values, e.g. "億円". */
+  unit?: string;
+  steps: WaterfallStep[];
+}
+
+/** Declarative single-value gauge (one headline ratio, e.g. a %). Domain-
+ *  agnostic: the renderer only knows value within [min, max]. */
+export interface GaugeSpec {
+  kind: "gauge";
+  /** Current value. */
+  value: number;
+  /** Scale bounds. Default 0..100 when omitted. */
+  min?: number;
+  max?: number;
+  /** Unit suffix shown with the value, e.g. "%". */
+  unit?: string;
+  /** Optional metric name shown under the gauge. */
+  label?: string | null;
+}
+
 /** Any data-driven visual. Discriminated by `kind`. All variants are
  *  domain-agnostic so omochairo (toys) can reuse the same renderer. */
-export type AssetSpec = ChartSpec | LineSpec | StatGridSpec;
+export type AssetSpec =
+  | ChartSpec
+  | LineSpec
+  | StatGridSpec
+  | DonutSpec
+  | WaterfallSpec
+  | GaugeSpec;
 
 export interface Asset {
   id: string;
-  type: "chart" | "line" | "stats" | "image";
+  type: "chart" | "line" | "stats" | "image" | "donut" | "waterfall" | "gauge";
   spec: AssetSpec;
 }
 

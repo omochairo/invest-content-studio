@@ -1,0 +1,63 @@
+{
+  "meta": {
+    "title": "ビジュアル種サンプル（donut / waterfall / gauge）",
+    "lang": "ja",
+    "format": "wide",
+    "disclaimer": "本コンテンツは情報提供を目的としたもので、特定の金融商品の売買を推奨・勧誘するものではありません。数値はすべてサンプルです。",
+    "sources": [{ "label": "サンプルデータ（実在の企業ではありません）", "url": "https://example.com/" }]
+  },
+  "narration": [
+    { "text": "構成比は、ドーナツで各セグメントの割合を示します。これはサンプルです。" },
+    { "text": "増減の分解は、ウォーターフォールで要因ごとに示します。これはサンプルです。" },
+    { "text": "単一の比率は、ゲージで一目で示します。これはサンプルです。" }
+  ],
+  "scenes": [
+    { "narrationIndex": 0, "caption": "セグメント別の構成比（サンプル）", "visualRef": "segments" },
+    { "narrationIndex": 1, "caption": "営業利益の増減分解（サンプル）", "visualRef": "bridge" },
+    { "narrationIndex": 2, "caption": "自己資本比率（サンプル）", "visualRef": "equity-ratio" }
+  ],
+  "assets": [
+    {
+      "id": "segments",
+      "type": "donut",
+      "spec": {
+        "kind": "donut",
+        "unit": "%",
+        "centerLabel": "売上構成",
+        "segments": [
+          { "label": "事業A", "value": 48 },
+          { "label": "事業B", "value": 27 },
+          { "label": "事業C", "value": 15 },
+          { "label": "その他", "value": 10 }
+        ]
+      }
+    },
+    {
+      "id": "bridge",
+      "type": "waterfall",
+      "spec": {
+        "kind": "waterfall",
+        "unit": "億円",
+        "steps": [
+          { "label": "前期", "value": 120, "isTotal": true },
+          { "label": "数量", "value": 35 },
+          { "label": "価格", "value": 18 },
+          { "label": "コスト", "value": -22 },
+          { "label": "今期", "value": 151, "isTotal": true }
+        ]
+      }
+    },
+    {
+      "id": "equity-ratio",
+      "type": "gauge",
+      "spec": {
+        "kind": "gauge",
+        "unit": "%",
+        "value": 62.4,
+        "min": 0,
+        "max": 100,
+        "label": "自己資本比率"
+      }
+    }
+  ]
+}

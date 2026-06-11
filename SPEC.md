@@ -46,6 +46,9 @@
 
 - TTS エンジン・動画エンジンを変えても **ContentPackage は不変**＝契約。差し替えコストを契約境界に閉じ込める。
 - `meta.disclaimer` と `meta.sources` は**必須**（コンプラ要件、§6 / AGENTS.md）。
+- `assets[].spec` は `kind` で判別する**ドメイン非依存の discriminated union**（型の正本は `packages/shared/src/contentPackage.ts`）。
+  対応ビジュアル種: `bar`（棒）/ `line`（推移）/ `stats`（指標カード）/ `donut`（構成比）/ `waterfall`（増減分解）/ `gauge`（単一比率）。
+  レンダラーは与えられた値（比率・増減・範囲内の位置）を描くだけで、投資/おもちゃ等の意味は持たない＝逆輸入で共用。
 
 ## 4. パイプライン全体像
 

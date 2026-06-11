@@ -56,6 +56,13 @@ const STILLS = [
   { comp: "LongFormExplainer", frame: 495, name: "long-form-stats" },
   { comp: "LongFormExplainer", frame: 595, name: "long-form-bar" },
   { comp: "LongFormExplainer", frame: 991, name: "long-form-endcard" },
+  // VisualShowcase (#36): deterministic, audio-independent. Each scene is
+  // SHOWCASE_SCENE_FRAMES(=90) long; frames sit at scene-local 60 (past the 10f
+  // enter ease, the 40f sweep spring, and the count-up that ends at 6+30=36), so
+  // the still captures the settled visual with its exact (load-bearing) values.
+  { comp: "VisualShowcase", frame: 60, name: "showcase-donut" },
+  { comp: "VisualShowcase", frame: 150, name: "showcase-waterfall" },
+  { comp: "VisualShowcase", frame: 240, name: "showcase-gauge" },
   // YouTube thumbnail (#37): static still, so the only frame is 0.
   { comp: "Thumbnail", frame: 0, name: "thumbnail" },
 ];
