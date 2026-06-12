@@ -1,0 +1,55 @@
+name: financials-explainer-jules
+
+# Financial-explainer Jules deep-dive lane — REQUEST side (epic #65). Jules is the
+# PRIMARY explainer path (evergreen 読み解き has no daily-speed pressure, so we lead
+# with the deepest path; Gemini generate:fin in financials-explainer.yml is the fast
+# fallback).
+#
+# For each selected ticker it refreshes the FinancialStatements (so the Jules prompt
+# carries the current code-derived fact sheet), then dispatches ONE Jules session per
+# symbol. Jules researches the company's business model deeply and opens an auto-PR
+# adding jules-research/<SYMBOL>-explainer.prose.json (prose only — title + beats).
+# The numbers and visuals are NOT Jules's job; they are re-derived in code by harvest.
+#
+# After the Jules PR is merged, run financials-explainer.yml with gen_source=jules to
+# harvest that prose into a gated ContentPackage and render the mp4.
+#
+# The Jules quota is SHARED with omochairo (Pro 100/day, rolling 24h), so
+# request:jules:fin gates on recent creations (JULES_DAILY_CAP, default 80) and
+# no-ops when the shared budget is exhausted. Manual dispatch only (no schedule) so
+# this never auto-competes with omochairo's article generation.
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "Tickers to deep-dive via Jules (space-separated), e.g. NVDA AAPL"
+        default: "NVDA"
+        required: true
+      years:
+        description: "Number of fiscal years (annual), newest first"
+        default: "5"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  request:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Refresh FinancialStatements so the Jules prompt has current fact sheets
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        run: npm run fetch:fin -- ${{ github.event.inputs.symbols }} --years "${{ github.event.inputs.years || '5' }}"
+      - name: Dispatch Jules deep-dive sessions (quota-gated, shared with omochairo)
+        env:
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+          JULES_DAILY_CAP: ${{ vars.JULES_DAILY_CAP || '80' }}
+        run: npm run request:jules:fin -- ${{ github.event.inputs.symbols }}
