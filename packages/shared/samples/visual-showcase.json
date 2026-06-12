@@ -8,13 +8,13 @@
   },
   "narration": [
     { "text": "構成比は、ドーナツで各セグメントの割合を示します。これはサンプルです。" },
-    { "text": "増減の分解は、ウォーターフォールで要因ごとに示します。これはサンプルです。" },
+    { "text": "損益計算書は、ウォーターフォールで売上高から純利益まで段階的に分解します。これはサンプルです。" },
     { "text": "単一の比率は、ゲージで一目で示します。これはサンプルです。" },
     { "text": "貸借対照表は、比例縮尺で資産と負債・純資産を同じ高さに並べます。これはサンプルです。" }
   ],
   "scenes": [
     { "narrationIndex": 0, "caption": "セグメント別の構成比（サンプル）", "visualRef": "segments" },
-    { "narrationIndex": 1, "caption": "営業利益の増減分解（サンプル）", "visualRef": "bridge" },
+    { "narrationIndex": 1, "caption": "損益計算書の分解（サンプル）", "visualRef": "bridge" },
     { "narrationIndex": 2, "caption": "自己資本比率（サンプル）", "visualRef": "equity-ratio" },
     { "narrationIndex": 3, "caption": "貸借対照表の比例縮尺（サンプル）", "visualRef": "balance-box" }
   ],
@@ -41,11 +41,16 @@
         "kind": "waterfall",
         "unit": "億円",
         "steps": [
-          { "label": "前期", "value": 120, "isTotal": true },
-          { "label": "数量", "value": 35 },
-          { "label": "価格", "value": 18 },
-          { "label": "コスト", "value": -22 },
-          { "label": "今期", "value": 151, "isTotal": true }
+          { "label": "売上高", "value": 2000, "isTotal": true },
+          { "label": "売上原価", "value": -600 },
+          { "label": "売上総利益", "value": 1400, "isTotal": true },
+          { "label": "研究開発費", "value": -180 },
+          { "label": "販管費", "value": -120 },
+          { "label": "営業利益", "value": 1100, "isTotal": true },
+          { "label": "営業外損益", "value": 60 },
+          { "label": "税引前利益", "value": 1160, "isTotal": true },
+          { "label": "法人税等", "value": -260 },
+          { "label": "純利益", "value": 900, "isTotal": true }
         ]
       }
     },
