@@ -158,6 +158,33 @@ export interface GaugeSpec {
   label?: string | null;
 }
 
+/** One segment within a proportional column (e.g. a balance-sheet line group). */
+export interface ProportionSegment {
+  label: string;
+  /** Raw magnitude in the spec's shared unit. Must be >= 0 (a stack height has
+   *  no sign). The renderer scales every segment of every column by one
+   *  value→pixel ratio, so thicknesses and column heights are comparable. */
+  value: number;
+}
+
+/** One column = a labeled stack of segments (e.g. "資産" or "負債・純資産"). */
+export interface ProportionColumn {
+  label: string;
+  segments: ProportionSegment[];
+}
+
+/** Declarative proportional stacked-columns spec (比例縮尺). Every segment of
+ *  every column shares one value→pixel scale, so two columns with equal totals
+ *  render at equal height — the signature balance-sheet box (資産 | 負債・純資産),
+ *  but domain-agnostic: the renderer only knows "N columns of non-negative
+ *  stacks on a shared scale", so any part-to-whole comparison can reuse it. */
+export interface ProportionSpec {
+  kind: "proportion";
+  /** Unit suffix shown on values, e.g. "億ドル" / "億円". */
+  unit?: string;
+  columns: ProportionColumn[];
+}
+
 /** Any data-driven visual. Discriminated by `kind`. All variants are
  *  domain-agnostic so omochairo (toys) can reuse the same renderer. */
 export type AssetSpec =
@@ -166,11 +193,12 @@ export type AssetSpec =
   | StatGridSpec
   | DonutSpec
   | WaterfallSpec
-  | GaugeSpec;
+  | GaugeSpec
+  | ProportionSpec;
 
 export interface Asset {
   id: string;
-  type: "chart" | "line" | "stats" | "image" | "donut" | "waterfall" | "gauge";
+  type: "chart" | "line" | "stats" | "image" | "donut" | "waterfall" | "gauge" | "proportion";
   spec: AssetSpec;
 }
 

@@ -16,6 +16,7 @@
  * pre-scaled — the renderer scales proportionally. `null` = not reported / not
  * mapped (the render layer must treat null as "omit this box", never as 0).
  */
+import type { ProportionColumn, ProportionSegment, ProportionSpec } from "./contentPackage";
 
 /**
  * Balance sheet, decomposed for the proportional two-column box (assets on the
@@ -128,4 +129,108 @@ export function marginPct(
 ): number | null {
   if (numerator == null || denominator == null || denominator === 0) return null;
   return (numerator / denominator) * 100;
+}
+
+/** Sum the non-null inputs; null when every input is null (so the caller can
+ *  tell "all unreported" from a genuine 0). */
+function sumOrNull(...vals: (number | null)[]): number | null {
+  let acc = 0;
+  let seen = false;
+  for (const v of vals) {
+    if (v != null) {
+      acc += v;
+      seen = true;
+    }
+  }
+  return seen ? acc : null;
+}
+
+/**
+ * Build the proportional balance-sheet box (資産 | 負債・純資産) from one period,
+ * as the domain-agnostic `proportion` AssetSpec the renderer consumes. Both
+ * columns balance by the accounting identity (資産 = 負債 + 純資産), so they render
+ * at equal height — that equality IS the visual's point. This is the only place
+ * that knows which BS field maps to which segment; the renderer stays generic.
+ *
+ * Amounts are divided by `scale` (default 1e8 = 億単位) and rounded to 1 dp so the
+ * on-screen numbers stay legible while proportions are preserved. A subtotal that
+ * is unreported falls back to summing its line items; a segment still null or 0
+ * is omitted (never drawn as a zero-height box — see the null contract above).
+ */
+export function balanceSheetToProportionSpec(
+  fs: FinancialStatements,
+  periodIndex = 0,
+  opts: { scale?: number; unit?: string } = {},
+): ProportionSpec {
+  const unit = opts.unit ?? (fs.currency === "JPY" ? "億円" : "億ドル");
+  const period = fs.periods[periodIndex];
+  if (!period) return { kind: "proportion", unit, columns: [] };
+
+  const bs = period.balanceSheet;
+  const scale = opts.scale ?? 1e8;
+
+  const push = (
+    into: ProportionSegment[],
+    label: string,
+    raw: number | null,
+  ): void => {
+    if (raw != null && raw !== 0) {
+      into.push({ label, value: Math.round((raw / scale) * 10) / 10 });
+    }
+  };
+
+  const assets: ProportionSegment[] = [];
+  push(
+    assets,
+    "流動資産",
+    bs.totalCurrentAssets ??
+      sumOrNull(
+        bs.cashAndEquivalents,
+        bs.shortTermInvestments,
+        bs.netReceivables,
+        bs.inventory,
+        bs.otherCurrentAssets,
+      ),
+  );
+  push(
+    assets,
+    "固定資産",
+    bs.totalNonCurrentAssets ??
+      sumOrNull(
+        bs.propertyPlantEquipmentNet,
+        bs.goodwill,
+        bs.intangibleAssets,
+        bs.longTermInvestments,
+        bs.otherNonCurrentAssets,
+      ),
+  );
+
+  const liabEquity: ProportionSegment[] = [];
+  push(
+    liabEquity,
+    "流動負債",
+    bs.totalCurrentLiabilities ??
+      sumOrNull(
+        bs.accountsPayable,
+        bs.shortTermDebt,
+        bs.deferredRevenue,
+        bs.otherCurrentLiabilities,
+      ),
+  );
+  push(
+    liabEquity,
+    "固定負債",
+    bs.totalNonCurrentLiabilities ?? sumOrNull(bs.longTermDebt, bs.otherNonCurrentLiabilities),
+  );
+  push(
+    liabEquity,
+    "純資産",
+    bs.totalEquity ?? sumOrNull(bs.commonStock, bs.retainedEarnings, bs.otherEquity),
+  );
+
+  const columns: ProportionColumn[] = [];
+  if (assets.length) columns.push({ label: "資産", segments: assets });
+  if (liabEquity.length) columns.push({ label: "負債・純資産", segments: liabEquity });
+
+  return { kind: "proportion", unit, columns };
 }

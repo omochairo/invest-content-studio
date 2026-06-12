@@ -63,6 +63,7 @@ const STILLS = [
   { comp: "VisualShowcase", frame: 60, name: "showcase-donut" },
   { comp: "VisualShowcase", frame: 150, name: "showcase-waterfall" },
   { comp: "VisualShowcase", frame: 240, name: "showcase-gauge" },
+  { comp: "VisualShowcase", frame: 330, name: "showcase-proportion" },
   // YouTube thumbnail (#37): static still, so the only frame is 0.
   { comp: "Thumbnail", frame: 0, name: "thumbnail" },
 ];
