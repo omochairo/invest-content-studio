@@ -3,6 +3,7 @@ import type { AudioManifest, ContentPackage } from "@ics/shared";
 import { DEFAULT_SCENE_TIMING } from "@ics/shared";
 import sample from "@ics/shared/samples/market-recap.json";
 import longFormSample from "@ics/shared/samples/long-form-explainer.json";
+import financialSample from "@ics/shared/samples/financial-explainer.json";
 import showcaseSample from "@ics/shared/samples/visual-showcase.json";
 import { MarketRecap } from "./MarketRecap";
 import { LongFormExplainer } from "./LongFormExplainer";
@@ -84,6 +85,40 @@ export const RemotionRoot = () => {
           }
           // Mirror the composition's scene<->clip binding so the timeline length
           // matches what LongFormExplainer actually lays out (Series.Sequence).
+          const clipFor = (narrationIndex: number) =>
+            manifest?.clips.find((c) => c.index === narrationIndex);
+          const sceneTotal = props.pkg.scenes.reduce(
+            (sum, s) => sum + sceneFrames(clipFor(s.narrationIndex)?.durationMs ?? EST_MS),
+            0,
+          );
+          return {
+            durationInFrames: Math.max(BRAND_FRAMES + sceneTotal, 1),
+            props: { ...props, manifest },
+          };
+        }}
+      />
+      {/* FinancialExplainer (epic #65, E = 読み解き層): the financial-statement
+          deep-dive. Reuses the LongFormExplainer component unchanged — it is
+          domain-agnostic, so the proportional BS box, the PL waterfall and the
+          ratio stat grids render from the ContentPackage alone. Same audio-
+          duration-driven metadata as LongFormExplainer (falls back to an
+          estimate in the studio before TTS has run). */}
+      <Composition
+        id="FinancialExplainer"
+        component={LongFormExplainer}
+        width={1920}
+        height={1080}
+        fps={FPS}
+        durationInFrames={300}
+        defaultProps={{ pkg: financialSample as ContentPackage, manifest: null }}
+        calculateMetadata={async ({ props }) => {
+          let manifest: AudioManifest | null = null;
+          try {
+            const res = await fetch(staticFile("audio/manifest.json"));
+            if (res.ok) manifest = (await res.json()) as AudioManifest;
+          } catch {
+            manifest = null;
+          }
           const clipFor = (narrationIndex: number) =>
             manifest?.clips.find((c) => c.index === narrationIndex);
           const sceneTotal = props.pkg.scenes.reduce(
