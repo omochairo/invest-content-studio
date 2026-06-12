@@ -5,6 +5,7 @@ import { StatGrid } from "./StatGrid";
 import { Donut } from "./Donut";
 import { Waterfall } from "./Waterfall";
 import { Gauge } from "./Gauge";
+import { ProportionBox } from "./ProportionBox";
 
 /** Resolve any data-driven asset to its visual component by discriminant.
  *  Shared by every composition so a new AssetSpec kind is wired once. */
@@ -22,6 +23,8 @@ export const Visual = ({ asset }: { asset: Asset }) => {
       return <Waterfall spec={asset.spec} />;
     case "gauge":
       return <Gauge spec={asset.spec} />;
+    case "proportion":
+      return <ProportionBox spec={asset.spec} />;
     default:
       return null;
   }
