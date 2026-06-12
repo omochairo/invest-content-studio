@@ -1,0 +1,368 @@
+/**
+ * Financial-explainer generation layer (epic #65, E = 読み解き層): a normalized
+ * FinancialStatements -> a long-form ContentPackage that walks through the
+ * proportional balance sheet (比例縮尺 BS) and the PL waterfall, then READS the
+ * numbers — what the margins, the cost structure, the equity ratio and the
+ * retained-earnings depth MEAN. That interpretation is the moat (eurekapu shows
+ * the boxes but never explains them).
+ *
+ * The §3 invariant is unchanged from generate-content.ts: the model writes ONLY
+ * prose. EVERY load-bearing number and every visual is computed HERE — the BS
+ * proportion box and PL waterfall come from the isolated shared mappers, the
+ * ratios from deriveExplainerMetrics. The model may only restate numbers that
+ * appear in the fact sheet. The scene<->asset binding is a fixed, code-owned BEAT
+ * PLAN with chapter sections (損益 / 成長 / 財務), so a scene can never point at a
+ * wrong/absent visual. §2-safe by construction: the focus hints describe the
+ * structure as reported fact (no buy/sell), and complianceGate blocks §2.1
+ * phrases — on a hit we retry once with the violation fed back, then fail hard.
+ *
+ * Env: GEMINI_API_KEY (required), GEMINI_MODEL (default gemini-2.5-flash).
+ * Run from repo root: `npm run generate:fin -- NVDA` (reads outputs/financials/NVDA.json).
+ */
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+import {
+  type Asset,
+  type ContentPackage,
+  type ExplainerMetrics,
+  type FinancialStatements,
+  type NarrationLine,
+  type Scene,
+  type Source,
+  balanceSheetToProportionSpec,
+  deriveExplainerMetrics,
+  incomeStatementToWaterfallSpec,
+} from "@ics/shared";
+import { complianceGate, validateContentPackage } from "./gate";
+
+try {
+  process.loadEnvFile();
+} catch {
+  /* rely on real env */
+}
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(HERE, "../../..");
+const IN_DIR = resolve(ROOT, "outputs/financials");
+const OUT_DIR = resolve(ROOT, "outputs/content");
+const KEY = process.env.GEMINI_API_KEY;
+const MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+
+const DISCLAIMER =
+  "本コンテンツは情報提供を目的としたもので、特定の金融商品の売買を推奨・勧誘するものではありません。投資判断はご自身の責任で行ってください。";
+
+// ── deterministic formatting (every load-bearing number comes from here) ──
+const unitOf = (fs: FinancialStatements) => (fs.currency === "JPY" ? "億円" : "億ドル");
+/** Raw amount -> 億 unit, 1 dp, matching the proportion/waterfall scale (÷1e8). */
+const oku = (raw: number | null, unit: string) =>
+  raw == null ? "不明" : `${(raw / 1e8).toFixed(1)}${unit}`;
+/** Unsigned ratio %, 1 dp ("71.1%" / "不明") — margins, equity ratio, etc. */
+const ratio = (n: number | null) => (n == null ? "不明" : `${n.toFixed(1)}%`);
+/** Signed % for growth ("+65.5%" / "-2.0%" / "不明"). */
+const growth = (n: number | null) => (n == null ? "不明" : `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`);
+
+// ── code-side asset builders (return null when the data is absent) ────────
+/** PL waterfall + BS proportion straight from the isolated shared mappers. */
+function buildStructureAssets(fs: FinancialStatements): Asset[] {
+  const assets: Asset[] = [];
+  const wf = incomeStatementToWaterfallSpec(fs, 0);
+  if (wf.steps.length) assets.push({ id: "pl-waterfall", type: "waterfall", spec: wf });
+  const bs = balanceSheetToProportionSpec(fs, 0);
+  if (bs.columns.length) assets.push({ id: "bs-proportion", type: "proportion", spec: bs });
+  return assets;
+}
+
+/** Two ratio stat grids (PL profitability, BS soundness) from the metrics. */
+function buildRatioAssets(m: ExplainerMetrics): Asset[] {
+  const assets: Asset[] = [];
+  const pl = [
+    { label: "粗利率", value: ratio(m.grossMarginPct), note: "売上総利益 ÷ 売上高" },
+    { label: "営業利益率", value: ratio(m.operatingMarginPct), note: "営業利益 ÷ 売上高" },
+    { label: "純利益率", value: ratio(m.netMarginPct), note: "純利益 ÷ 売上高" },
+  ].filter((i) => i.value !== "不明");
+  if (pl.length) assets.push({ id: "pl-ratios", type: "stats", spec: { kind: "stats", items: pl } });
+
+  const bs = [
+    { label: "自己資本比率", value: ratio(m.equityRatioPct), note: "純資産 ÷ 総資産" },
+    { label: "流動比率", value: ratio(m.currentRatioPct), note: "流動資産 ÷ 流動負債" },
+    { label: "利益剰余金の厚み", value: ratio(m.retainedToEquityPct), note: "純資産に占める割合" },
+  ].filter((i) => i.value !== "不明");
+  if (bs.length) assets.push({ id: "bs-ratios", type: "stats", spec: { kind: "stats", items: bs } });
+  return assets;
+}
+
+/** Multi-year revenue trend (oldest->newest, 億 unit) from periods. */
+function buildRevTrend(fs: FinancialStatements): Asset | null {
+  const unit = unitOf(fs);
+  const points = [...fs.periods]
+    .filter((p) => p.incomeStatement.revenue != null)
+    .reverse() // periods are newest-first; a trend reads left(old)->right(new)
+    .map((p) => ({
+      label: p.period,
+      value: Math.round(((p.incomeStatement.revenue as number) / 1e8) * 10) / 10,
+    }));
+  if (points.length < 2) return null;
+  return { id: "rev-trend", type: "line", spec: { kind: "line", unit, points } };
+}
+
+/** All code-owned assets, in display order. */
+export function buildExplainerAssets(fs: FinancialStatements): Asset[] {
+  const m = deriveExplainerMetrics(fs, 0);
+  const assets = [...buildStructureAssets(fs)];
+  const ratios = buildRatioAssets(m);
+  const pl = ratios.find((a) => a.id === "pl-ratios");
+  const bs = ratios.find((a) => a.id === "bs-ratios");
+  const trend = buildRevTrend(fs);
+  // Order: PL waterfall, PL ratios, revenue trend, BS proportion, BS ratios.
+  const wf = assets.find((a) => a.id === "pl-waterfall");
+  const prop = assets.find((a) => a.id === "bs-proportion");
+  return [wf, pl, trend, prop, bs].filter((a): a is Asset => a != null);
+}
+
+function buildSources(fs: FinancialStatements): Source[] {
+  const sources: Source[] = [];
+  if (fs.source.url) sources.push({ label: "Financial Modeling Prep（財務諸表）", url: fs.source.url });
+  sources.push({ label: "Financial Modeling Prep", url: "https://financialmodelingprep.com/" });
+  return sources;
+}
+
+/** Formatted fact sheet — the ONLY numbers the model may put into prose. */
+export function explainerFactSheet(fs: FinancialStatements): string {
+  const u = unitOf(fs);
+  const p = fs.periods[0];
+  if (!p) return "（データなし）";
+  const is = p.incomeStatement;
+  const bs = p.balanceSheet;
+  const m = deriveExplainerMetrics(fs, 0);
+  const lines = [
+    `企業名: ${fs.companyName} (${fs.symbol}) / 市場: ${fs.market} / 会計基準: ${fs.accountingStandard ?? "不明"}`,
+    `対象期: ${p.period}（${p.periodEnd}） 通貨: ${fs.currency}・金額単位: ${u}`,
+    "— 損益（PL）—",
+    `売上高 ${oku(is.revenue, u)} / 売上総利益 ${oku(is.grossProfit, u)} / 営業利益 ${oku(is.operatingIncome, u)} / 純利益 ${oku(is.netIncome, u)}`,
+    `売上原価 ${oku(is.costOfRevenue, u)} / 研究開発費 ${oku(is.researchAndDevelopment, u)} / 販管費 ${oku(is.sellingGeneralAndAdmin, u)}`,
+    `粗利率 ${ratio(m.grossMarginPct)} / 営業利益率 ${ratio(m.operatingMarginPct)} / 純利益率 ${ratio(m.netMarginPct)} / 実効税率 ${ratio(m.effectiveTaxRatePct)}`,
+    "— 財務（BS）—",
+    `総資産 ${oku(bs.totalAssets, u)} / 純資産 ${oku(bs.totalEquity, u)} / 利益剰余金 ${oku(bs.retainedEarnings, u)}`,
+    `自己資本比率 ${ratio(m.equityRatioPct)} / 流動比率 ${ratio(m.currentRatioPct)} / 利益剰余金の厚み ${ratio(m.retainedToEquityPct)}`,
+    "— 成長（前期比）—",
+    `売上 ${growth(m.revenueYoYPct)} / 営業利益 ${growth(m.operatingIncomeYoYPct)} / 純利益 ${growth(m.netIncomeYoYPct)}`,
+  ];
+  const hist = [...fs.periods].filter((q) => q.incomeStatement.revenue != null);
+  if (hist.length >= 2)
+    lines.push(
+      `売上推移: ${[...hist].reverse().map((q) => `${q.period} ${oku(q.incomeStatement.revenue, u)}`).join(" → ")}`,
+    );
+  return lines.join("\n");
+}
+
+// ── beat plan: a fixed, code-owned scene<->asset binding with chapters ────
+interface BeatPlan {
+  visualRef: string | null;
+  /** Chapter chip (損益 / 成長 / 財務 …) shown in the long-form header. */
+  section: string | null;
+  /** What this beat should talk about (guides the prose, §2-safe, no numbers). */
+  focus: string;
+}
+
+/** Ordered beat plan; a visual beat is included only if its asset exists. */
+export function buildExplainerPlan(assets: Asset[], fs: FinancialStatements): BeatPlan[] {
+  const has = (id: string) => assets.some((a) => a.id === id);
+  const plan: BeatPlan[] = [
+    {
+      visualRef: null,
+      section: "イントロ",
+      focus: `つかみ。${fs.companyName} の ${fs.periods[0]?.period ?? ""} の財務諸表を、数字の意味まで読み解くと予告する。`,
+    },
+  ];
+  if (has("pl-waterfall"))
+    plan.push({
+      visualRef: "pl-waterfall",
+      section: "損益",
+      focus: "売上高から売上原価・各費用を順に引いて利益が残るまでの流れを、図に沿って事実として説明する。",
+    });
+  if (has("pl-ratios"))
+    plan.push({
+      visualRef: "pl-ratios",
+      section: "損益",
+      focus:
+        "粗利率・営業利益率・純利益率が示す収益構造を読み解く。高い/低いは構造の説明にとどめ、売買の含意や将来予測は出さない。",
+    });
+  if (has("rev-trend"))
+    plan.push({
+      visualRef: "rev-trend",
+      section: "成長",
+      focus: "売上高の複数期の推移と前期比の伸びを、方向の説明にとどめて述べる。断定的な将来予測はしない。",
+    });
+  if (has("bs-proportion"))
+    plan.push({
+      visualRef: "bs-proportion",
+      section: "財務",
+      focus:
+        "比例縮尺の貸借対照表。左の資産と右の負債・純資産が同じ高さ＝資産＝負債＋純資産の恒等式であることと、各ブロックの厚みの構成を説明する。",
+    });
+  if (has("bs-ratios"))
+    plan.push({
+      visualRef: "bs-ratios",
+      section: "財務",
+      focus:
+        "自己資本比率・流動比率・利益剰余金の厚みが示す財務の安定性と利益の社内蓄積を、報告値として読み解く。",
+    });
+  plan.push({
+    visualRef: null,
+    section: "まとめ",
+    focus: "締め。『数値の詳細と出典は概要欄をご確認ください。投資判断はご自身で。』相当で結ぶ。",
+  });
+  return plan;
+}
+
+type Beat = { narration: string; caption: string };
+
+const RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    title: { type: "string" },
+    beats: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { narration: { type: "string" }, caption: { type: "string" } },
+        required: ["narration", "caption"],
+      },
+    },
+  },
+  required: ["title", "beats"],
+};
+
+function buildPrompt(fs: FinancialStatements, plan: BeatPlan[], retryNote = ""): string {
+  const beats = plan
+    .map(
+      (b, i) =>
+        `  ${i}) [${b.section ?? "—"}] ${b.visualRef ? "（画面にデータ表示あり）" : ""}${b.focus}`,
+    )
+    .join("\n");
+  return `あなたは日本語で財務諸表をやさしく解説する、中立的な単独ナレーターです。
+横型の財務解説動画の台本を書きます。決算「速報」ではなく、報告済みの財務諸表を読み解く解説です。
+
+# 厳守ルール（金融商品取引法コンプラ・違反は不可）
+- 報告済みの事実の説明に徹する。売買の推奨・指示は一切しない（「買うべき」「買い時」「売り時」「狙い目」「割安」「割高だから売り」等は禁止）。
+- 断定的な将来予測をしない（「必ず上がる」「確実に」「絶対」等は禁止）。
+- 利回り・元本の保証をしない（「儲かる」「損しない」「元本保証」「リスクなし」等は禁止）。
+- 数値は下記「確定データ」の値だけを使う。新しい数値を創作しない。比率の四捨五入も確定データの表記に従う。
+- 「読み解き」は数字が示す構造の説明に限る（例：粗利率が高い＝原価を引いた後に残る割合が大きい収益構造）。良し悪しの投資判断には踏み込まない。
+
+# 確定データ（この数値以外を本文に出さない）
+${explainerFactSheet(fs)}
+
+# 構成（各ビートに narration と caption を1つずつ。順番・個数は厳守＝${plan.length}個）
+${beats}
+
+# 出力仕様（JSON）
+- title: 動画タイトル（社名と「財務諸表の読み解き」相当を含む簡潔な日本語、誇張なし）。
+- beats: 上の構成と完全に同じ個数・同じ順番（${plan.length}個）。各 beat は narration（話す1〜2文・自然な解説口調）/ caption（画面テロップ・短く）。
+${retryNote}`;
+}
+
+async function callGemini(prompt: string): Promise<{ title: string; beats: Beat[] }> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA,
+        temperature: 0.6,
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`Gemini -> HTTP ${res.status}: ${(await res.text()).slice(0, 1500)}`);
+  const data = (await res.json()) as {
+    candidates?: { content?: { parts?: { text?: string }[] } }[];
+  };
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("Gemini: empty response");
+  return JSON.parse(text) as { title: string; beats: Beat[] };
+}
+
+export function assembleExplainer(
+  fs: FinancialStatements,
+  assets: Asset[],
+  plan: BeatPlan[],
+  gen: { title: string; beats: Beat[] },
+): ContentPackage {
+  const narration: NarrationLine[] = [];
+  const scenes: Scene[] = [];
+  plan.forEach((b, i) => {
+    const beat = gen.beats[i] as Beat; // length checked in generate() before assemble
+    narration.push({ text: beat.narration });
+    scenes.push({ narrationIndex: i, caption: beat.caption, visualRef: b.visualRef, section: b.section });
+  });
+  return {
+    meta: {
+      title: gen.title?.trim() || `${fs.companyName} 財務諸表の読み解き`,
+      lang: "ja",
+      format: "wide",
+      disclaimer: DISCLAIMER,
+      sources: buildSources(fs),
+    },
+    narration,
+    scenes,
+    assets,
+  };
+}
+
+async function generate(fs: FinancialStatements): Promise<ContentPackage> {
+  const assets = buildExplainerAssets(fs);
+  const plan = buildExplainerPlan(assets, fs);
+  let note = "";
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const gen = await callGemini(buildPrompt(fs, plan, note));
+    if (!Array.isArray(gen.beats) || gen.beats.length !== plan.length) {
+      note = `\n# 前回は beats の個数が違いました。必ず ${plan.length} 個、構成と同じ順番で出力してください。`;
+      continue;
+    }
+    const pkg = assembleExplainer(fs, assets, plan, gen);
+    const v = validateContentPackage(pkg);
+    if (!v.ok) throw new Error(`validate fail: ${v.errors.join("; ")}`);
+    const c = complianceGate(pkg);
+    if (c.ok) return pkg;
+    console.log(`  compliance fail (attempt ${attempt}): ${c.errors.join("; ")}`);
+    note = `\n# 前回の出力はコンプラ違反でした。次の表現を必ず避けて書き直してください:\n${c.errors.join("\n")}`;
+  }
+  throw new Error("generation failed after retry (count/compliance) — publish blocked (AGENTS.md §2)");
+}
+
+async function main(): Promise<void> {
+  if (!KEY) throw new Error("GEMINI_API_KEY is not set (add it to .env / CI secret)");
+  const argv = process.argv.slice(2);
+  if (argv.length === 0) throw new Error("usage: npm run generate:fin -- <SYMBOL> [SYMBOL...]");
+  await mkdir(OUT_DIR, { recursive: true });
+
+  for (const symbol of argv) {
+    try {
+      const fs = JSON.parse(
+        await readFile(resolve(IN_DIR, `${symbol}.json`), "utf8"),
+      ) as FinancialStatements;
+      const pkg = await generate(fs);
+      await writeFile(resolve(OUT_DIR, `${symbol}-explainer.json`), JSON.stringify(pkg, null, 2));
+      console.log(
+        `  ${symbol}: ${pkg.scenes.length} scenes, ${pkg.assets.length} assets, "${pkg.meta.title}" -> outputs/content/${symbol}-explainer.json`,
+      );
+    } catch (err) {
+      console.error(`  ${symbol}: ${err instanceof Error ? err.message : err}`);
+      process.exitCode = 1;
+    }
+  }
+}
+
+// Entry-guard: only run main() when invoked directly, so the pure builders above
+// can be imported by unit tests without a network call or API key.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}
+
