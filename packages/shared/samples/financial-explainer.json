@@ -1,0 +1,260 @@
+{
+  "meta": {
+    "title": "NVIDIA 財務諸表の読み解き",
+    "lang": "ja",
+    "format": "wide",
+    "disclaimer": "本コンテンツは情報提供を目的としたもので、特定の金融商品の売買を推奨・勧誘するものではありません。投資判断はご自身の責任で行ってください。",
+    "sources": [
+      {
+        "label": "Financial Modeling Prep（財務諸表）",
+        "url": "https://site.financialmodelingprep.com/financial-statements/NVDA"
+      },
+      {
+        "label": "Financial Modeling Prep",
+        "url": "https://financialmodelingprep.com/"
+      }
+    ]
+  },
+  "narration": [
+    {
+      "text": "今回はエヌビディアのFY2026本決算の財務諸表を、数字が示す意味まで読み解いていきます。"
+    },
+    {
+      "text": "売上高2,159億ドルから、売上原価や研究開発費などの費用を順に差し引いていくと、最終的に1,200億ドルの純利益が残ります。"
+    },
+    {
+      "text": "粗利率は71パーセント、営業利益率は60パーセントと、売上の多くが費用を引いた後にも利益として残る収益構造になっています。"
+    },
+    {
+      "text": "売上高はFY2024の609億ドルから直近では2,159億ドルへと拡大し、前期比でもプラス65パーセントの伸びとなっています。"
+    },
+    {
+      "text": "貸借対照表を比例縮尺で見ると、左の資産と右の負債・純資産は同じ高さで、資産イコール負債プラス純資産の関係が成り立っています。純資産の厚みが目を引きます。"
+    },
+    {
+      "text": "自己資本比率は76パーセントと高く、純資産の9割超が利益剰余金で占められています。これまで稼いだ利益の社内への蓄積が厚いことを表します。"
+    },
+    {
+      "text": "以上、数字が示す構造を中心に読み解きました。詳細な数値と出典は概要欄をご確認ください。投資判断はご自身で行ってください。"
+    }
+  ],
+  "scenes": [
+    {
+      "narrationIndex": 0,
+      "caption": "NVIDIA 財務諸表の読み解き",
+      "visualRef": null,
+      "section": "イントロ"
+    },
+    {
+      "narrationIndex": 1,
+      "caption": "売上→費用→利益の流れ",
+      "visualRef": "pl-waterfall",
+      "section": "損益"
+    },
+    {
+      "narrationIndex": 2,
+      "caption": "高い利益率の構造",
+      "visualRef": "pl-ratios",
+      "section": "損益"
+    },
+    {
+      "narrationIndex": 3,
+      "caption": "売上の推移",
+      "visualRef": "rev-trend",
+      "section": "成長"
+    },
+    {
+      "narrationIndex": 4,
+      "caption": "資産=負債+純資産",
+      "visualRef": "bs-proportion",
+      "section": "財務"
+    },
+    {
+      "narrationIndex": 5,
+      "caption": "厚い自己資本と利益の蓄積",
+      "visualRef": "bs-ratios",
+      "section": "財務"
+    },
+    {
+      "narrationIndex": 6,
+      "caption": "まとめ",
+      "visualRef": null,
+      "section": "まとめ"
+    }
+  ],
+  "assets": [
+    {
+      "id": "pl-waterfall",
+      "type": "waterfall",
+      "spec": {
+        "kind": "waterfall",
+        "unit": "億ドル",
+        "steps": [
+          {
+            "label": "売上高",
+            "value": 2159.4,
+            "isTotal": true
+          },
+          {
+            "label": "売上原価",
+            "value": -624.8
+          },
+          {
+            "label": "売上総利益",
+            "value": 1534.6,
+            "isTotal": true
+          },
+          {
+            "label": "研究開発費",
+            "value": -185
+          },
+          {
+            "label": "販管費",
+            "value": -45.8
+          },
+          {
+            "label": "営業利益",
+            "value": 1303.9,
+            "isTotal": true
+          },
+          {
+            "label": "営業外損益",
+            "value": 110.6
+          },
+          {
+            "label": "税引前利益",
+            "value": 1414.5,
+            "isTotal": true
+          },
+          {
+            "label": "法人税等",
+            "value": -213.8
+          },
+          {
+            "label": "純利益",
+            "value": 1200.7,
+            "isTotal": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "pl-ratios",
+      "type": "stats",
+      "spec": {
+        "kind": "stats",
+        "items": [
+          {
+            "label": "粗利率",
+            "value": "71.1%",
+            "note": "売上総利益 ÷ 売上高"
+          },
+          {
+            "label": "営業利益率",
+            "value": "60.4%",
+            "note": "営業利益 ÷ 売上高"
+          },
+          {
+            "label": "純利益率",
+            "value": "55.6%",
+            "note": "純利益 ÷ 売上高"
+          }
+        ]
+      }
+    },
+    {
+      "id": "rev-trend",
+      "type": "line",
+      "spec": {
+        "kind": "line",
+        "unit": "億ドル",
+        "points": [
+          {
+            "label": "FY2022",
+            "value": 269.1
+          },
+          {
+            "label": "FY2023",
+            "value": 269.7
+          },
+          {
+            "label": "FY2024",
+            "value": 609.2
+          },
+          {
+            "label": "FY2025",
+            "value": 1305
+          },
+          {
+            "label": "FY2026",
+            "value": 2159.4
+          }
+        ]
+      }
+    },
+    {
+      "id": "bs-proportion",
+      "type": "proportion",
+      "spec": {
+        "kind": "proportion",
+        "unit": "億ドル",
+        "columns": [
+          {
+            "label": "資産",
+            "segments": [
+              {
+                "label": "流動資産",
+                "value": 1256.1
+              },
+              {
+                "label": "固定資産",
+                "value": 812
+              }
+            ]
+          },
+          {
+            "label": "負債・純資産",
+            "segments": [
+              {
+                "label": "流動負債",
+                "value": 321.6
+              },
+              {
+                "label": "固定負債",
+                "value": 173.5
+              },
+              {
+                "label": "純資産",
+                "value": 1572.9
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "bs-ratios",
+      "type": "stats",
+      "spec": {
+        "kind": "stats",
+        "items": [
+          {
+            "label": "自己資本比率",
+            "value": "76.1%",
+            "note": "純資産 ÷ 総資産"
+          },
+          {
+            "label": "流動比率",
+            "value": "390.5%",
+            "note": "流動資産 ÷ 流動負債"
+          },
+          {
+            "label": "利益剰余金の厚み",
+            "value": "93.4%",
+            "note": "純資産に占める割合"
+          }
+        ]
+      }
+    }
+  ]
+}

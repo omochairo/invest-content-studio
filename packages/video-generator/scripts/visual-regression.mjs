@@ -56,6 +56,15 @@ const STILLS = [
   { comp: "LongFormExplainer", frame: 495, name: "long-form-stats" },
   { comp: "LongFormExplainer", frame: 595, name: "long-form-bar" },
   { comp: "LongFormExplainer", frame: 991, name: "long-form-endcard" },
+  // FinancialExplainer (#65 E): the financial-statement deep-dive (7 scenes,
+  // EST_MS=101f each past the 45f bumper). Frames land mid-scene (past the 12f
+  // enter + the visual's settle) on each read-layer kind — PL waterfall (scene 1),
+  // PL ratio stats (2), revenue line (3), proportional BS box (4). Bumper/end-card
+  // are already covered by LongForm (same component).
+  { comp: "FinancialExplainer", frame: 210, name: "financial-waterfall" },
+  { comp: "FinancialExplainer", frame: 300, name: "financial-pl-ratios" },
+  { comp: "FinancialExplainer", frame: 410, name: "financial-line" },
+  { comp: "FinancialExplainer", frame: 510, name: "financial-proportion" },
   // VisualShowcase (#36): deterministic, audio-independent. Each scene is
   // SHOWCASE_SCENE_FRAMES(=90) long; frames sit at scene-local 60 (past the 10f
   // enter ease, the 40f sweep spring, and the count-up that ends at 6+30=36), so

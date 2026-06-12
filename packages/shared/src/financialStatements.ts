@@ -303,3 +303,88 @@ export function incomeStatementToWaterfallSpec(
 
   return { kind: "waterfall", unit, steps };
 }
+
+/**
+ * The interpretation layer's prose-free fact base (epic #65 E = 読み解き層). From
+ * one period (and its predecessor for YoY), derive the ratios/structure numbers a
+ * "読み解き" narration rests on — gross/operating/net margin, cost structure as a
+ * share of revenue, the balance-sheet structure (自己資本比率/流動比率/利益剰余金の
+ * 厚み), and year-over-year growth. Every figure is a fact computed from the
+ * statements, so the generation layer can frame what a number MEANS while NEVER
+ * inventing one (AGENTS.md §3) and staying §2-safe (no buy/sell, just structure).
+ *
+ * This is the single place that knows which ratio is which — like the proportion/
+ * waterfall mappers above. It carries NO thresholds, "notable" judgement, or
+ * wording: selecting which structure to talk about and the §2-safe framing is the
+ * generator's (editorial) job; this stays pure computation. Every field is
+ * `number | null` (a null numerator/denominator, or a missing prior period for
+ * YoY, yields null — never 0). All values are percentages.
+ */
+export interface ExplainerMetrics {
+  // --- PL structure (share of revenue) ---
+  grossMarginPct: number | null;
+  operatingMarginPct: number | null;
+  netMarginPct: number | null;
+  cogsRatioPct: number | null;
+  rndRatioPct: number | null;
+  sgaRatioPct: number | null;
+  /** 実効税率 = 法人税等 / 税引前利益. */
+  effectiveTaxRatePct: number | null;
+  // --- BS structure ---
+  /** 自己資本比率 = 純資産 / 総資産. */
+  equityRatioPct: number | null;
+  /** 流動比率 = 流動資産 / 流動負債. */
+  currentRatioPct: number | null;
+  /** 利益剰余金の厚み = 利益剰余金 / 純資産. */
+  retainedToEquityPct: number | null;
+  // --- Growth vs the prior period (null when there is no predecessor) ---
+  revenueYoYPct: number | null;
+  operatingIncomeYoYPct: number | null;
+  netIncomeYoYPct: number | null;
+}
+
+export function deriveExplainerMetrics(
+  fs: FinancialStatements,
+  periodIndex = 0,
+): ExplainerMetrics {
+  const empty: ExplainerMetrics = {
+    grossMarginPct: null,
+    operatingMarginPct: null,
+    netMarginPct: null,
+    cogsRatioPct: null,
+    rndRatioPct: null,
+    sgaRatioPct: null,
+    effectiveTaxRatePct: null,
+    equityRatioPct: null,
+    currentRatioPct: null,
+    retainedToEquityPct: null,
+    revenueYoYPct: null,
+    operatingIncomeYoYPct: null,
+    netIncomeYoYPct: null,
+  };
+  const period = fs.periods[periodIndex];
+  if (!period) return empty;
+
+  const is = period.incomeStatement;
+  const bs = period.balanceSheet;
+  // `periods` is newest-first, so the prior fiscal period is the next index.
+  const prevIs = fs.periods[periodIndex + 1]?.incomeStatement ?? null;
+  const yoy = (cur: number | null, prev: number | null): number | null =>
+    marginPct(cur != null && prev != null ? cur - prev : null, prev);
+
+  return {
+    grossMarginPct: marginPct(is.grossProfit, is.revenue),
+    operatingMarginPct: marginPct(is.operatingIncome, is.revenue),
+    netMarginPct: marginPct(is.netIncome, is.revenue),
+    cogsRatioPct: marginPct(is.costOfRevenue, is.revenue),
+    rndRatioPct: marginPct(is.researchAndDevelopment, is.revenue),
+    sgaRatioPct: marginPct(is.sellingGeneralAndAdmin, is.revenue),
+    effectiveTaxRatePct: marginPct(is.incomeTax, is.incomeBeforeTax),
+    equityRatioPct: marginPct(bs.totalEquity, bs.totalAssets),
+    currentRatioPct: marginPct(bs.totalCurrentAssets, bs.totalCurrentLiabilities),
+    retainedToEquityPct: marginPct(bs.retainedEarnings, bs.totalEquity),
+    revenueYoYPct: yoy(is.revenue, prevIs?.revenue ?? null),
+    operatingIncomeYoYPct: yoy(is.operatingIncome, prevIs?.operatingIncome ?? null),
+    netIncomeYoYPct: yoy(is.netIncome, prevIs?.netIncome ?? null),
+  };
+}

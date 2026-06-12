@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   balanceSheetToProportionSpec,
+  deriveExplainerMetrics,
   incomeStatementToWaterfallSpec,
   marginPct,
 } from "./financialStatements";
@@ -251,4 +252,101 @@ test("incomeStatementToWaterfallSpec - JPY unit, missing period yields empty ste
   const empty = isFs(ZERO_IS);
   empty.periods = [];
   assert.deepEqual(incomeStatementToWaterfallSpec(empty).steps, []);
+});
+
+// ── deriveExplainerMetrics (epic #65 E = 読み解き層) ──────────────────────
+/** Within 0.01 percentage point — ratios are facts, not rounded display. */
+const near = (a: number | null, b: number) => {
+  assert.ok(a != null, `expected ${b}, got null`);
+  assert.ok(Math.abs(a! - b) < 0.01, `expected ~${b}, got ${a}`);
+};
+
+/** NVDA FY2026 (newest) + FY2025 (prior) from outputs/financials/NVDA.json. */
+const NVDA_FY26_BS: BalanceSheet = {
+  ...ZERO_BS,
+  totalAssets: 206_803_000_000,
+  totalCurrentAssets: 125_605_000_000,
+  totalCurrentLiabilities: 32_163_000_000,
+  retainedEarnings: 146_973_000_000,
+  totalEquity: 157_293_000_000,
+};
+const NVDA_FY26_IS: IncomeStatement = {
+  revenue: 215_938_000_000,
+  costOfRevenue: 62_475_000_000,
+  grossProfit: 153_463_000_000,
+  researchAndDevelopment: 18_497_000_000,
+  sellingGeneralAndAdmin: 4_579_000_000,
+  otherOperatingExpenses: 0,
+  operatingIncome: 130_387_000_000,
+  nonOperatingNet: 11_063_000_000,
+  incomeBeforeTax: 141_450_000_000,
+  incomeTax: 21_383_000_000,
+  netIncome: 120_067_000_000,
+};
+const NVDA_FY25_IS: IncomeStatement = {
+  ...ZERO_IS,
+  revenue: 130_497_000_000,
+  operatingIncome: 81_453_000_000,
+  netIncome: 72_880_000_000,
+};
+
+/** Two-period (newest-first) statements for the YoY path. */
+function twoPeriodFs(
+  newIs: IncomeStatement,
+  newBs: BalanceSheet,
+  prevIs: IncomeStatement | null,
+): FinancialStatements {
+  const base = fs(newBs);
+  base.periods[0].incomeStatement = newIs;
+  if (prevIs)
+    base.periods.push({
+      period: "FY2025",
+      periodEnd: "2025-01-26",
+      periodType: "annual",
+      balanceSheet: ZERO_BS,
+      incomeStatement: prevIs,
+      cashFlow: null,
+    });
+  return base;
+}
+
+test("deriveExplainerMetrics - real NVDA FY2026 PL/BS ratios", () => {
+  const m = deriveExplainerMetrics(twoPeriodFs(NVDA_FY26_IS, NVDA_FY26_BS, NVDA_FY25_IS));
+  near(m.grossMarginPct, 71.0682);
+  near(m.operatingMarginPct, 60.3817);
+  near(m.netMarginPct, 55.6029);
+  near(m.cogsRatioPct, 28.9318);
+  near(m.rndRatioPct, 8.5658);
+  near(m.sgaRatioPct, 2.1205);
+  near(m.effectiveTaxRatePct, 15.1171);
+  near(m.equityRatioPct, 76.0598);
+  near(m.currentRatioPct, 390.5295);
+  near(m.retainedToEquityPct, 93.4393);
+  // 粗利率 + 売上原価率 = 100 (grossProfit + cogs = revenue, by construction).
+  near(m.grossMarginPct! + m.cogsRatioPct!, 100);
+});
+
+test("deriveExplainerMetrics - YoY uses the prior period (newest-first)", () => {
+  const m = deriveExplainerMetrics(twoPeriodFs(NVDA_FY26_IS, NVDA_FY26_BS, NVDA_FY25_IS));
+  near(m.revenueYoYPct, 65.4734); // (215938-130497)/130497
+  near(m.operatingIncomeYoYPct, 60.0763);
+  near(m.netIncomeYoYPct, 64.7464);
+});
+
+test("deriveExplainerMetrics - no prior period yields null YoY (never 0)", () => {
+  const m = deriveExplainerMetrics(twoPeriodFs(NVDA_FY26_IS, NVDA_FY26_BS, null));
+  assert.equal(m.revenueYoYPct, null);
+  assert.equal(m.operatingIncomeYoYPct, null);
+  assert.equal(m.netIncomeYoYPct, null);
+  near(m.grossMarginPct, 71.0682); // single-period ratios still resolve
+});
+
+test("deriveExplainerMetrics - all-null statements and empty periods stay null", () => {
+  const allNull = deriveExplainerMetrics(twoPeriodFs(ZERO_IS, ZERO_BS, null));
+  assert.equal(allNull.grossMarginPct, null);
+  assert.equal(allNull.equityRatioPct, null);
+  assert.equal(allNull.effectiveTaxRatePct, null);
+  const empty = fs(ZERO_BS);
+  empty.periods = [];
+  assert.equal(deriveExplainerMetrics(empty).netMarginPct, null);
 });
