@@ -16,7 +16,13 @@
  * pre-scaled — the renderer scales proportionally. `null` = not reported / not
  * mapped (the render layer must treat null as "omit this box", never as 0).
  */
-import type { ProportionColumn, ProportionSegment, ProportionSpec } from "./contentPackage";
+import type {
+  ProportionColumn,
+  ProportionSegment,
+  ProportionSpec,
+  WaterfallSpec,
+  WaterfallStep,
+} from "./contentPackage";
 
 /**
  * Balance sheet, decomposed for the proportional two-column box (assets on the
@@ -233,4 +239,67 @@ export function balanceSheetToProportionSpec(
   if (liabEquity.length) columns.push({ label: "負債・純資産", segments: liabEquity });
 
   return { kind: "proportion", unit, columns };
+}
+
+/**
+ * Build the PL waterfall (損益計算書の分解) from one period's income statement, as
+ * the domain-agnostic `waterfall` AssetSpec the renderer consumes. The bridge
+ * reads top to bottom: 売上高 → −売上原価 → 売上総利益 → −販管費/R&D → 営業利益 →
+ * ±営業外損益 → 税引前利益 → −法人税等 → 純利益. Subtotals (粗利・営業利益・税引前・
+ * 純利益) are `isTotal` columns that sit on the baseline and re-anchor the running
+ * cumulative, so a rounding drift in the deltas can never accumulate — each
+ * subtotal is the source figure, not a re-sum. This is the only place that knows
+ * which IncomeStatement field is a step; the renderer stays generic.
+ *
+ * Cost lines (原価・R&D・販管費・税) are stored as positive magnitudes in the
+ * source, so they are negated here into downward deltas; 営業外損益 is already
+ * signed and passes through. Amounts are divided by `scale` (default 1e8 = 億単位)
+ * and rounded to 1 dp — the same scale the proportional BS box uses, so the two
+ * visuals are directly comparable. A null line is omitted; a zero delta is
+ * omitted too (no movement to draw), but a subtotal is kept whenever reported.
+ */
+export function incomeStatementToWaterfallSpec(
+  fs: FinancialStatements,
+  periodIndex = 0,
+  opts: { scale?: number; unit?: string } = {},
+): WaterfallSpec {
+  const unit = opts.unit ?? (fs.currency === "JPY" ? "億円" : "億ドル");
+  const period = fs.periods[periodIndex];
+  if (!period) return { kind: "waterfall", unit, steps: [] };
+
+  const is = period.incomeStatement;
+  const scale = opts.scale ?? 1e8;
+  // Round on magnitude then reapply sign, so a downward delta rounds the same way
+  // as the equivalent positive figure (Math.round breaks .5 toward +Infinity, so
+  // -624.75 would otherwise become -624.7 while +624.75 becomes 624.8).
+  const sc = (raw: number | null): number | null =>
+    raw == null ? null : (Math.sign(raw) * Math.round((Math.abs(raw) / scale) * 10)) / 10;
+
+  const steps: WaterfallStep[] = [];
+  const total = (label: string, raw: number | null): void => {
+    const v = sc(raw);
+    if (v != null) steps.push({ label, value: v, isTotal: true });
+  };
+  // `raw` is the already-signed contribution to the running cumulative (cost
+  // lines are negated by the caller; 営業外損益 is passed signed). A null or a
+  // value that rounds to 0 draws no bar.
+  const delta = (label: string, raw: number | null): void => {
+    const v = sc(raw);
+    if (v != null && v !== 0) steps.push({ label, value: v });
+  };
+  const neg = (raw: number | null): number | null => (raw == null ? null : -raw);
+
+  total("売上高", is.revenue);
+  delta("売上原価", neg(is.costOfRevenue));
+  total("売上総利益", is.grossProfit);
+  delta("研究開発費", neg(is.researchAndDevelopment));
+  delta("販管費", neg(is.sellingGeneralAndAdmin));
+  delta("その他営業費用", neg(is.otherOperatingExpenses));
+  total("営業利益", is.operatingIncome);
+  delta("営業外損益", is.nonOperatingNet);
+  total("税引前利益", is.incomeBeforeTax);
+  delta("法人税等", neg(is.incomeTax));
+  total("純利益", is.netIncome);
+
+  return { kind: "waterfall", unit, steps };
 }
