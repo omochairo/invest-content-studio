@@ -217,7 +217,7 @@ export function buildExplainerPlan(assets: Asset[], fs: FinancialStatements): Be
   return plan;
 }
 
-type Beat = { narration: string; caption: string };
+export type Beat = { narration: string; caption: string };
 
 const RESPONSE_SCHEMA = {
   type: "object",

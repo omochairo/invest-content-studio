@@ -3,9 +3,12 @@ name: financials-explainer
 # Financial-explainer (読み解き層) end-to-end pipeline, epic #65 — produces the
 # NVDA 1-symbol MVP mp4 entirely in CI (the only execution host, see SPEC/AGENTS):
 #   T1 fetch     — FMP statements -> FinancialStatements (LLM-free numbers)
-#   E  generate  — FinancialStatements -> chaptered ContentPackage via Gemini
-#                  (prose only; BS proportion / PL waterfall / ratio grids are
-#                  code-derived from the shared mappers + deriveExplainerMetrics)
+#   E  prose     — FinancialStatements -> chaptered ContentPackage. Two sources via
+#                  the `gen_source` input: jules (PRIMARY — harvest the committed
+#                  Jules deep-dive prose, see financials-explainer-jules.yml) or
+#                  gemini (fast fallback). Either way prose only; BS proportion /
+#                  PL waterfall / ratio grids are code-derived (shared mappers +
+#                  deriveExplainerMetrics).
 #   gate         — validate (schema) + compliance (§2: zero prohibited phrases)
 #   render       — VOICEVOX (docker service) -> Remotion FinancialExplainer mp4
 #
@@ -35,6 +38,14 @@ on:
       years:
         description: "Number of fiscal years (annual), newest first"
         default: "5"
+        required: true
+      gen_source:
+        description: "Prose source: jules (harvest committed prose, PRIMARY) or gemini (generate:fin fallback)"
+        type: choice
+        options:
+          - jules
+          - gemini
+        default: jules
         required: true
       render:
         description: "Run the heavy TTS+render stage"
@@ -107,11 +118,18 @@ jobs:
           path: outputs/financials/${{ matrix.symbol }}.json
           if-no-files-found: error
 
-      - name: E Generate explainer ContentPackage (Gemini, numbers code-fixed)
+      - name: E Generate explainer ContentPackage (Gemini fallback, numbers code-fixed)
+        if: ${{ github.event.inputs.gen_source != 'jules' }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
         run: npm run generate:fin -- "$SYMBOL"
+      - name: E Harvest Jules deep-dive prose (PRIMARY, numbers still code-fixed)
+        if: ${{ github.event.inputs.gen_source == 'jules' }}
+        # Reads the committed jules-research/$SYMBOL-explainer.prose.json (from a
+        # merged Jules PR) and assembles it with the same code-derived assets + §2
+        # gate. No Gemini. Requires the Jules PR to be merged into the checked-out ref.
+        run: npm run harvest:jules:fin -- "$SYMBOL"
       - name: Gate (validate + §2 compliance) — fail stops publish
         run: npm run check -- "outputs/content/$SYMBOL-explainer.json"
       - name: Show ContentPackage

@@ -63,6 +63,11 @@ JP 長尺の台本生成は **prose（title / narration / caption）のみ** を
   §2 gate** を通すので、Jules prose も §2 違反は確実にブロックされる（`verify:jules` が回帰検証）。
 - **Jules quota は omochairo と共有**（Pro 100/日・rolling 24h）。`request:jules:jp` は直近作成数で gate し、
   予算切れ時は no-op。**自動 schedule では回さず手動 dispatch のみ**（omochairo の記事生成を枯渇させない）。
+- **財務解説（読み解き層, epic #65）も同じ二段**。prose のみ LLM・数値/visual はコード固定で不変。
+  `request:jules:fin` → `jules-research/<SYMBOL>-explainer.prose.json` を 1 ファイル PR → マージ後
+  `harvest:jules:fin` / `financials-explainer.yml gen_source=jules`。evergreen 解説は日次速度圧が無いため
+  **Jules を主経路**に置き（`gen_source` 既定 `jules`）、`generate:fin`（Gemini）は高速フォールバック。
+  回帰は `verify:jules:fin`（happy path / beat 個数 / §2 ブロックの 3 検査・ネットワーク不要）。
 
 ## 5. 自動化ワークフロー規律
 
