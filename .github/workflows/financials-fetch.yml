@@ -1,0 +1,59 @@
+name: financials-fetch
+
+# T1 (US data layer, epic #65): fetch FMP statements -> FinancialStatements and
+# upload the normalized JSON as an artifact. Manual only — this is the live
+# verification path for the fetcher (no local .env), and the first PoC step
+# toward the financial-explainer MVP (T8). It does NOT generate/render/publish.
+#
+# NOTE: a new workflow is only dispatchable once this file is on the default
+# branch — `gh workflow run` 404s until then.
+
+on:
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "Space-separated tickers (e.g. 'NVDA' or 'NVDA AAPL MSFT')"
+        default: "NVDA"
+        required: true
+      years:
+        description: "Number of fiscal years (annual), newest first"
+        default: "5"
+        required: true
+
+concurrency:
+  group: financials-fetch-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fetch:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Fetch financial statements (FMP)
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          IN_SYMBOLS: ${{ github.event.inputs.symbols }}
+          IN_YEARS: ${{ github.event.inputs.years }}
+        run: npm run fetch:fin -- $IN_SYMBOLS --years "$IN_YEARS"
+
+      - name: Show NVDA sample (sanity peek)
+        run: |
+          for f in outputs/financials/*.json; do
+            echo "=== $f ==="
+            node -e "const s=require('./'+process.argv[1]); const p=s.periods[0]; console.log(JSON.stringify({symbol:s.symbol,name:s.companyName,periods:s.periods.length,latest:p&&p.period,revenue:p&&p.incomeStatement.revenue,totalAssets:p&&p.balanceSheet.totalAssets,fcf:p&&p.cashFlow&&p.cashFlow.freeCashFlow},null,2))" "$f"
+          done
+
+      - name: Upload FinancialStatements JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: financials-json
+          path: outputs/financials/*.json
+          if-no-files-found: error
