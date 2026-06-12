@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "fetch": "tsx packages/content-generator/src/fetch-earnings.ts",
+    "fetch:fin": "tsx packages/content-generator/src/fetch-financials.ts",
     "fetch:jp": "tsx packages/content-generator/src/fetch-jp-equity.ts",
     "generate": "tsx packages/content-generator/src/generate-content.ts",
     "generate:jp": "tsx packages/content-generator/src/generate-jp-content.ts",
