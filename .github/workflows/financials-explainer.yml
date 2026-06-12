@@ -1,0 +1,189 @@
+name: financials-explainer
+
+# Financial-explainer (読み解き層) end-to-end pipeline, epic #65 — produces the
+# NVDA 1-symbol MVP mp4 entirely in CI (the only execution host, see SPEC/AGENTS):
+#   T1 fetch     — FMP statements -> FinancialStatements (LLM-free numbers)
+#   E  generate  — FinancialStatements -> chaptered ContentPackage via Gemini
+#                  (prose only; BS proportion / PL waterfall / ratio grids are
+#                  code-derived from the shared mappers + deriveExplainerMetrics)
+#   gate         — validate (schema) + compliance (§2: zero prohibited phrases)
+#   render       — VOICEVOX (docker service) -> Remotion FinancialExplainer mp4
+#
+# Parallelism: the per-symbol pipeline runs as a `strategy.matrix` over the
+# requested tickers, mirroring phase2-jp (public repo = free unlimited Actions
+# minutes). MVP is a single NVDA shard; more US single-company explainers (#65)
+# fan out unchanged. The `setup` job parses the space-separated `symbols` input
+# into a JSON array. The heavy TTS+render stage can be skipped with `render:false`.
+#
+# IMPORTANT path note: `npm run generate:fin` writes outputs/content/<SYMBOL>-
+# explainer.json (NOTE the `-explainer` suffix, unlike phase2-jp's <CODE>.json).
+# check / tts / render-props all reference that suffixed path.
+#
+# NOTE: a new workflow is only dispatchable once this file is on the default
+# branch — `gh workflow run` 404s until then.
+
+on:
+  push:
+    branches:
+      - feat/financials-explainer-pipeline
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "Space-separated tickers (e.g. 'NVDA' or 'NVDA AAPL MSFT')"
+        default: "NVDA"
+        required: true
+      years:
+        description: "Number of fiscal years (annual), newest first"
+        default: "5"
+        required: true
+      render:
+        description: "Run the heavy TTS+render stage"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Parse the space-separated `symbols` input into a JSON array the render matrix
+  # fans out over, e.g. "NVDA AAPL" -> ["NVDA","AAPL"]. jq is preinstalled.
+  setup:
+    runs-on: ubuntu-22.04
+    outputs:
+      symbols: ${{ steps.parse.outputs.symbols }}
+    steps:
+      - id: parse
+        run: |
+          raw='${{ github.event.inputs.symbols || 'NVDA' }}'
+          json=$(printf '%s' "$raw" | tr ' ' '\n' | grep -v '^$' | jq -R . | jq -s -c .)
+          echo "symbols=$json"
+          echo "symbols=$json" >> "$GITHUB_OUTPUT"
+
+  fin-render:
+    needs: setup
+    strategy:
+      fail-fast: false
+      matrix:
+        symbol: ${{ fromJson(needs.setup.outputs.symbols) }}
+    runs-on: ubuntu-22.04
+    services:
+      voicevox:
+        # Same engine version as the other lanes (0.25.2) so speaker 2 (四国めたん
+        # ノーマル) matches. No `cpu-latest` tag exists. Used by the TTS step below.
+        image: voicevox/voicevox_engine:cpu-0.25.2
+        ports:
+          - 50021:50021
+    env:
+      SYMBOL: ${{ matrix.symbol }}
+      YEARS: ${{ github.event.inputs.years || '5' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Install Chromium runtime deps (Remotion render)
+        if: ${{ github.event.inputs.render != 'false' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libasound2 \
+            libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
+            libatk-bridge2.0-0 libcups2 libpango-1.0-0 libcairo2
+
+      - name: T1 Fetch FinancialStatements (FMP)
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        run: npm run fetch:fin -- "$SYMBOL" --years "$YEARS"
+      - name: Show statements (sanity peek)
+        run: |
+          node -e "const s=require('./outputs/financials/'+process.argv[1]+'.json'); const p=s.periods[0]; console.log(JSON.stringify({symbol:s.symbol,name:s.companyName,periods:s.periods.length,latest:p&&p.period,revenue:p&&p.incomeStatement.revenue,totalAssets:p&&p.balanceSheet.totalAssets},null,2))" "$SYMBOL"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: financials-json-${{ matrix.symbol }}
+          path: outputs/financials/${{ matrix.symbol }}.json
+          if-no-files-found: error
+
+      - name: E Generate explainer ContentPackage (Gemini, numbers code-fixed)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
+        run: npm run generate:fin -- "$SYMBOL"
+      - name: Gate (validate + §2 compliance) — fail stops publish
+        run: npm run check -- "outputs/content/$SYMBOL-explainer.json"
+      - name: Show ContentPackage
+        run: cat "outputs/content/$SYMBOL-explainer.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fin-content-${{ matrix.symbol }}
+          path: outputs/content/${{ matrix.symbol }}-explainer.json
+          if-no-files-found: error
+
+      # ── TTS + render (one symbol per matrix shard; long-form is costly) ──────
+      - name: Wait for VOICEVOX engine
+        if: ${{ github.event.inputs.render != 'false' }}
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:50021/version; then
+              echo "VOICEVOX ready"; exit 0
+            fi
+            echo "waiting for VOICEVOX... ($i)"; sleep 5
+          done
+          echo "VOICEVOX did not become ready"; exit 1
+      - name: TTS (VOICEVOX, speaker 2)
+        if: ${{ github.event.inputs.render != 'false' }}
+        env:
+          VOICEVOX_URL: http://localhost:50021
+        run: npm run tts -- "outputs/content/$SYMBOL-explainer.json"
+      - name: Render explainer mp4 (Remotion FinancialExplainer, 1920x1080)
+        if: ${{ github.event.inputs.render != 'false' }}
+        working-directory: packages/video-generator
+        run: |
+          # Wrap the bare ContentPackage into { pkg, manifest } — passing it raw
+          # silently renders the sample (see scripts/render-props.mjs).
+          node scripts/render-props.mjs \
+            "$GITHUB_WORKSPACE/outputs/content/$SYMBOL-explainer.json" out/render-props.json
+          npx remotion render src/index.ts FinancialExplainer "out/$SYMBOL.mp4" \
+            --props=out/render-props.json
+      - name: Render thumbnail (Remotion still, 1280x720)
+        if: ${{ github.event.inputs.render != 'false' }}
+        working-directory: packages/video-generator
+        run: |
+          npx remotion still src/index.ts Thumbnail "out/$SYMBOL.thumb.png" \
+            --props=out/render-props.json
+      - name: Report rendered duration / size
+        if: ${{ github.event.inputs.render != 'false' }}
+        run: |
+          f="packages/video-generator/out/$SYMBOL.mp4"
+          ls -lh "$f"
+          # Derive length from the audio manifest (no ffprobe dependency on the
+          # runner): the video is exactly the sum of clip durations + padding.
+          python3 - "packages/video-generator/public/audio/manifest.json" <<'PY'
+          import json, sys, math
+          PAD_MS, FPS = 350, 30
+          m = json.load(open(sys.argv[1], encoding="utf-8"))
+          clips = m["clips"]
+          frames = sum(max(1, math.ceil(((c["durationMs"] + PAD_MS) / 1000) * FPS)) for c in clips)
+          print(f"clips={len(clips)} frames={frames} duration={frames/FPS:.1f}s "
+                f"(audio {sum(c['durationMs'] for c in clips)/1000:.1f}s + {PAD_MS}ms/scene pad)")
+          PY
+      - name: Upload explainer mp4 artifact
+        if: ${{ github.event.inputs.render != 'false' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fin-explainer-${{ matrix.symbol }}-mp4
+          path: |
+            packages/video-generator/out/${{ matrix.symbol }}.mp4
+            outputs/content/${{ matrix.symbol }}-explainer.json
+            packages/video-generator/public/audio/manifest.json
+          if-no-files-found: error
+      - name: Upload thumbnail artifact
+        if: ${{ github.event.inputs.render != 'false' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fin-thumbnail-${{ matrix.symbol }}
+          path: packages/video-generator/out/${{ matrix.symbol }}.thumb.png
+          if-no-files-found: error
