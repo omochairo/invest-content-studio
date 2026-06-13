@@ -18,6 +18,7 @@ import type { FinancialStatements } from "./financialStatements";
 export type BusinessArchetype =
   | "financial-institution" // bank/insurer: the balance sheet IS the business
   | "investment-holding" // op income n/a; value flows through investment P&L
+  | "trading-company" // 総合商社: op n/a, big trading revenue, equity-method earnings (8058/8001)
   | "financialized-industrial" // segment assets expose a finance/leasing arm (Toyota)
   | "standard"; // industrial/tech with a normal income statement
 
@@ -51,6 +52,13 @@ const HOLDING_MARGIN =
   "営業利益が開示されない投資持株のため、営業利益率は扱わない。純利益が投資先の評価・売却損益で構成され年度間で変動しやすい事実を、前期比の振れ幅があれば具体的に述べて読み解く。将来予測や売買の含意は出さない。";
 const HOLDING_BS =
   "比例縮尺の貸借対照表で、資産側が投資資産中心であること、純資産の厚みを事実として読み解く。事業会社の自己資本比率と同じ尺度で良し悪しを論じない。";
+
+const TRADING_NOTE =
+  "この会社は総合商社で、資源・機械・食料・繊維・金融など多数の事業セグメントに投資し、トレーディング（商取引）と事業投資の両輪で稼ぐ多角的な事業ポートフォリオが特徴。売上高は取引総額を反映して大きく出るが、最終損益の重要な柱の一つが持分法適用会社（関連会社・合弁）からの持分法投資損益であり、単一の営業利益率では事業の姿を捉えにくい。読み解きの主役は『多角的な事業投資ポートフォリオ』と『利益の源泉の多様さ（連結事業＋持分法投資損益）』に置く。製造業や金融機関と同じ尺度では測らない。";
+const TRADING_MARGIN =
+  "営業利益が単独では開示されない総合商社のため、営業利益率は扱わない。売上高は商取引の取引総額を反映して大きいが、利益の源泉は連結子会社の事業利益に加え、持分法適用会社（関連会社・合弁）からの持分法投資損益が大きな柱になる構造を事実として述べる。売上高に対する利益率の高低で良し悪しを論じない。";
+const TRADING_BS =
+  "比例縮尺の貸借対照表で、資産側が多数の事業投資（子会社・関連会社株式・営業債権・棚卸資産）に分散していること、自己資本比率が中位で出ることを、多角的な事業ポートフォリオを持つ総合商社の構造として事実説明する。製造業の設備や金融機関の金融資産とは資産の中身が異なる点に触れてよいが、自己資本比率の良し悪しは論じない。";
 
 const FINANCIALIZED_NOTE =
   "この会社は製造・販売が本業だが、販売金融やリースの金融事業を連結に抱えるため、その金融子会社の資産・負債が連結BSを大きく膨らませ、自己資本比率が事業の実態より低めに出る。読み解きの主役は『売上構成と資産構成のズレ』——金融事業は売上比は小さいのに資産を大きく抱える——という構造の非対称に置く。";
@@ -97,6 +105,22 @@ export function deriveInterpretationProfile(fs: FinancialStatements): Interpreta
       axisNote: HOLDING_NOTE,
       marginFocus: HOLDING_MARGIN,
       bsFocus: HOLDING_BS,
+    };
+  }
+  // 2b) General trading company (総合商社, 8058/8001): like a holding it discloses
+  //     no meaningful single operating income, but unlike a holding it runs large
+  //     trading revenue (turnover not tiny) across many diversified segments, with
+  //     equity-method affiliates as a core profit pillar. Step 2 already took the
+  //     low-turnover op==null cases (pure holdings), so reaching here with op==null
+  //     and a healthy turnover over diversified segments is the trading-company shape.
+  if (op == null && net != null && assetTurnover != null && assetTurnover >= 0.6 && hasSegAssets) {
+    return {
+      archetype: "trading-company",
+      ...base,
+      suppress: { plWaterfall: true, grossMargin: true, operatingMargin: true },
+      axisNote: TRADING_NOTE,
+      marginFocus: TRADING_MARGIN,
+      bsFocus: TRADING_BS,
     };
   }
   // 3) Financialized industrial: a finance/leasing arm shows up as segment assets
