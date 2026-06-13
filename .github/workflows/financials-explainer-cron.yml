@@ -73,6 +73,9 @@ jobs:
     if: ${{ needs.select.outputs.count != '0' }}
     strategy:
       fail-fast: false
+      # Gemini free tier is 5 generate RPM/model; cap concurrent shards so the
+      # batch doesn't burst past it (callGemini also retries 429 as a backstop).
+      max-parallel: 3
       matrix:
         include: ${{ fromJson(needs.select.outputs.batch) }}
     runs-on: ubuntu-22.04
