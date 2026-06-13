@@ -185,6 +185,36 @@ export interface ProportionSpec {
   columns: ProportionColumn[];
 }
 
+/** One plotted point (e.g. a company positioned by two metrics). */
+export interface ScatterPoint {
+  /** Short label drawn next to the dot (e.g. a ticker). */
+  label: string;
+  x: number;
+  y: number;
+}
+
+/** Declarative 2-axis scatter (多社横比較の散布図). Domain-agnostic: the renderer
+ *  only knows "N labeled points on two linear axes", so any pair of comparable
+ *  metrics (収益性×財務健全性, 成長率×実績 …) can reuse it. Optional median lines
+ *  split the plane into quadrants; an optional y=x diagonal supports the
+ *  conservatism-style reference (actual vs forecast). No domain meaning (割安/
+ *  割高 等) is attached — labels/framing live in the generated prose, never here. */
+export interface ScatterSpec {
+  kind: "scatter";
+  /** Axis titles shown on the X / Y axes. */
+  xLabel?: string;
+  yLabel?: string;
+  /** Unit suffix appended to tick values, e.g. "%". */
+  xUnit?: string;
+  yUnit?: string;
+  points: ScatterPoint[];
+  /** Draw a y=x 45° reference line (e.g. forecast vs actual). */
+  diagonal?: boolean;
+  /** Quadrant divider values (median lines). Null/undefined = no divider. */
+  xMid?: number | null;
+  yMid?: number | null;
+}
+
 /** Any data-driven visual. Discriminated by `kind`. All variants are
  *  domain-agnostic so omochairo (toys) can reuse the same renderer. */
 export type AssetSpec =
@@ -194,11 +224,12 @@ export type AssetSpec =
   | DonutSpec
   | WaterfallSpec
   | GaugeSpec
-  | ProportionSpec;
+  | ProportionSpec
+  | ScatterSpec;
 
 export interface Asset {
   id: string;
-  type: "chart" | "line" | "stats" | "image" | "donut" | "waterfall" | "gauge" | "proportion";
+  type: "chart" | "line" | "stats" | "image" | "donut" | "waterfall" | "gauge" | "proportion" | "scatter";
   spec: AssetSpec;
 }
 

@@ -1,0 +1,174 @@
+name: comparison-video
+
+# Multi-company comparison video (T2, issue #64) end-to-end pipeline. Unlike the
+# single-company explainer (#65, a per-symbol matrix), this assembles ONE video
+# that maps several companies against each other — a 収益性×財務健全性 scatter
+# plus profitability / soundness ranking bars:
+#   fetch     — each US ticker via FMP (T1), each JP 4-digit code via EDINET (T2);
+#               both land the SAME outputs/financials/<SYM>.json shape.
+#   generate  — generate:comparison reads them all -> ONE ContentPackage
+#               (outputs/content/COMPARE.json). Deterministic, code-authored §2-
+#               safe prose: NO model, so zero Gemini/Jules quota dependency.
+#   gate      — validate (schema) + compliance (§2: zero prohibited phrases)
+#   render    — VOICEVOX (docker service) -> Remotion FinancialExplainer (the
+#               domain-agnostic 16:9 long-form composition, reused unchanged) mp4
+#   upload    — yt:upload to YouTube (PRIVATE; unaudited project forces private
+#               anyway). Only on dispatch with upload=true, or on a branch push.
+#
+# Only one combined video, so this is a single job (no matrix). Cross-currency
+# safe: only dimensionless % metrics are compared (億ドル vs 億円 never are).
+#
+# NOTE: a new workflow is only dispatchable once on the default branch
+# (`gh workflow run` 404s until then) — pushing this branch runs it directly.
+
+on:
+  push:
+    branches:
+      - feat/comparison-scatter-64
+  workflow_dispatch:
+    inputs:
+      us_symbols:
+        description: "Space-separated US tickers (FMP)"
+        default: "NVDA AAPL MSFT"
+        required: true
+      jp_symbols:
+        description: "Space-separated JP 4-digit TSE codes (EDINET)"
+        default: "7203 6758 9984"
+        required: true
+      years:
+        description: "Number of fiscal years (annual), newest first"
+        default: "5"
+        required: true
+      render:
+        description: "Run the heavy TTS+render stage"
+        type: boolean
+        default: true
+      upload:
+        description: "Upload the rendered mp4 to YouTube (PRIVATE)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  comparison:
+    runs-on: ubuntu-22.04
+    services:
+      voicevox:
+        image: voicevox/voicevox_engine:cpu-0.25.2
+        ports:
+          - 50021:50021
+    env:
+      US_SYMBOLS: ${{ github.event.inputs.us_symbols || 'NVDA AAPL MSFT' }}
+      JP_SYMBOLS: ${{ github.event.inputs.jp_symbols || '7203 6758 9984' }}
+      YEARS: ${{ github.event.inputs.years || '5' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Install Chromium runtime deps (Remotion render)
+        if: ${{ github.event.inputs.render != 'false' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libasound2 \
+            libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
+            libatk-bridge2.0-0 libcups2 libpango-1.0-0 libcairo2
+
+      - name: T1 Fetch US statements (FMP)
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        run: |
+          for s in $US_SYMBOLS; do
+            npm run fetch:fin -- "$s" --years "$YEARS"
+          done
+      - name: T2 Fetch JP statements (EDINET via ラジ株ナビ)
+        env:
+          RADIKABUNAVI_API_KEY: ${{ secrets.RADIKABUNAVI_API_KEY }}
+        run: |
+          for s in $JP_SYMBOLS; do
+            npm run fetch:fin:jp -- "$s" --years "$YEARS"
+          done
+
+      - name: Generate comparison ContentPackage (numbers code-fixed, prose deterministic)
+        run: npm run generate:comparison -- $US_SYMBOLS $JP_SYMBOLS
+      - name: Gate (validate + §2 compliance) — fail stops publish
+        run: npm run check -- outputs/content/COMPARE.json
+      - name: Show ContentPackage
+        run: cat outputs/content/COMPARE.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: comparison-content
+          path: outputs/content/COMPARE.json
+          if-no-files-found: error
+
+      # ── TTS + render ────────────────────────────────────────────────────────
+      - name: Wait for VOICEVOX engine
+        if: ${{ github.event.inputs.render != 'false' }}
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:50021/version; then
+              echo "VOICEVOX ready"; exit 0
+            fi
+            echo "waiting for VOICEVOX... ($i)"; sleep 5
+          done
+          echo "VOICEVOX did not become ready"; exit 1
+      - name: TTS (VOICEVOX, speaker 2)
+        if: ${{ github.event.inputs.render != 'false' }}
+        env:
+          VOICEVOX_URL: http://localhost:50021
+        run: npm run tts -- outputs/content/COMPARE.json
+      - name: Render mp4 (Remotion FinancialExplainer, 1920x1080)
+        if: ${{ github.event.inputs.render != 'false' }}
+        working-directory: packages/video-generator
+        run: |
+          node scripts/render-props.mjs \
+            "$GITHUB_WORKSPACE/outputs/content/COMPARE.json" out/render-props.json
+          npx remotion render src/index.ts FinancialExplainer "out/COMPARE.mp4" \
+            --props=out/render-props.json
+      - name: Render thumbnail (Remotion still, 1280x720)
+        if: ${{ github.event.inputs.render != 'false' }}
+        working-directory: packages/video-generator
+        run: |
+          npx remotion still src/index.ts Thumbnail "out/COMPARE.thumb.png" \
+            --props=out/render-props.json
+      - name: Report rendered duration / size
+        if: ${{ github.event.inputs.render != 'false' }}
+        run: |
+          f="packages/video-generator/out/COMPARE.mp4"
+          ls -lh "$f"
+          python3 - "packages/video-generator/public/audio/manifest.json" <<'PY'
+          import json, sys, math
+          PAD_MS, FPS = 350, 30
+          m = json.load(open(sys.argv[1], encoding="utf-8"))
+          clips = m["clips"]
+          frames = sum(max(1, math.ceil(((c["durationMs"] + PAD_MS) / 1000) * FPS)) for c in clips)
+          print(f"clips={len(clips)} frames={frames} duration={frames/FPS:.1f}s "
+                f"(audio {sum(c['durationMs'] for c in clips)/1000:.1f}s + {PAD_MS}ms/scene pad)")
+          PY
+      - name: Upload mp4 artifact
+        if: ${{ github.event.inputs.render != 'false' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: comparison-mp4
+          path: |
+            packages/video-generator/out/COMPARE.mp4
+            packages/video-generator/out/COMPARE.thumb.png
+            packages/video-generator/public/audio/manifest.json
+          if-no-files-found: error
+
+      # ── YouTube upload (PRIVATE) ────────────────────────────────────────────
+      - name: Upload to YouTube (PRIVATE)
+        if: ${{ github.event.inputs.render != 'false' && github.event.inputs.upload != 'false' }}
+        env:
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          YOUTUBE_PRIVACY: private
+        run: npm run yt:upload -- COMPARE

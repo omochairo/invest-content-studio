@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "ビジュアル種サンプル（donut / waterfall / gauge / proportion）",
+    "title": "ビジュアル種サンプル（donut / waterfall / gauge / proportion / scatter）",
     "lang": "ja",
     "format": "wide",
     "disclaimer": "本コンテンツは情報提供を目的としたもので、特定の金融商品の売買を推奨・勧誘するものではありません。数値はすべてサンプルです。",
@@ -10,13 +10,15 @@
     { "text": "構成比は、ドーナツで各セグメントの割合を示します。これはサンプルです。" },
     { "text": "損益計算書は、ウォーターフォールで売上高から純利益まで段階的に分解します。これはサンプルです。" },
     { "text": "単一の比率は、ゲージで一目で示します。これはサンプルです。" },
-    { "text": "貸借対照表は、比例縮尺で資産と負債・純資産を同じ高さに並べます。これはサンプルです。" }
+    { "text": "貸借対照表は、比例縮尺で資産と負債・純資産を同じ高さに並べます。これはサンプルです。" },
+    { "text": "複数社の横比較は、散布図で二つの指標の位置関係を一目で示します。これはサンプルです。" }
   ],
   "scenes": [
     { "narrationIndex": 0, "caption": "セグメント別の構成比（サンプル）", "visualRef": "segments" },
     { "narrationIndex": 1, "caption": "損益計算書の分解（サンプル）", "visualRef": "bridge" },
     { "narrationIndex": 2, "caption": "自己資本比率（サンプル）", "visualRef": "equity-ratio" },
-    { "narrationIndex": 3, "caption": "貸借対照表の比例縮尺（サンプル）", "visualRef": "balance-box" }
+    { "narrationIndex": 3, "caption": "貸借対照表の比例縮尺（サンプル）", "visualRef": "balance-box" },
+    { "narrationIndex": 4, "caption": "収益性 × 自己資本の厚み（サンプル）", "visualRef": "scatter-map" }
   ],
   "assets": [
     {
@@ -88,6 +90,26 @@
               { "label": "純資産", "value": 1500 }
             ]
           }
+        ]
+      }
+    },
+    {
+      "id": "scatter-map",
+      "type": "scatter",
+      "spec": {
+        "kind": "scatter",
+        "xLabel": "営業利益率（収益性）",
+        "yLabel": "自己資本比率（財務の厚み）",
+        "xUnit": "%",
+        "yUnit": "%",
+        "xMid": 30,
+        "yMid": 45,
+        "points": [
+          { "label": "A社", "x": 60, "y": 76 },
+          { "label": "B社", "x": 46, "y": 55 },
+          { "label": "C社", "x": 32, "y": 21 },
+          { "label": "D社", "x": 12, "y": 24 },
+          { "label": "E社", "x": 10, "y": 39 }
         ]
       }
     }

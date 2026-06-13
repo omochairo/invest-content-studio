@@ -6,6 +6,7 @@ import { Donut } from "./Donut";
 import { Waterfall } from "./Waterfall";
 import { Gauge } from "./Gauge";
 import { ProportionBox } from "./ProportionBox";
+import { ScatterPlot } from "./ScatterPlot";
 
 /** Resolve any data-driven asset to its visual component by discriminant.
  *  Shared by every composition so a new AssetSpec kind is wired once. */
@@ -25,6 +26,8 @@ export const Visual = ({ asset }: { asset: Asset }) => {
       return <Gauge spec={asset.spec} />;
     case "proportion":
       return <ProportionBox spec={asset.spec} />;
+    case "scatter":
+      return <ScatterPlot spec={asset.spec} />;
     default:
       return null;
   }
