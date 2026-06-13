@@ -1,5 +1,5 @@
 import { spring, useCurrentFrame, useVideoConfig } from "remotion";
-import type { ProportionSpec } from "@ics/shared";
+import { resolveLabelPositions, type ProportionSpec } from "@ics/shared";
 
 const TEXT = "#cdd9e5";
 const LABEL = "#9fb3c8";
@@ -65,15 +65,32 @@ export const ProportionBox = ({ spec }: { spec: ProportionSpec }) => {
         const total = totals[ci] ?? 0;
 
         let yCursor = chartBottom;
+        let settledCursor = chartBottom;
         const rects = col.segments.map((s, si) => {
           const fullH = s.value * pxPerUnit;
           const h = fullH * grow;
           const y = yCursor - h;
           yCursor -= h;
+          // Settled (grow=1) mid-height: stable anchor for an escaped label so it
+          // never jitters relative to its siblings while bars animate in.
+          const settledMid = settledCursor - fullH / 2;
+          settledCursor -= fullH;
           const color = PALETTE[colorIdx++ % PALETTE.length];
           const showInside = fullH > (vertical ? 56 : 60);
-          return { s, si, y, h, fullH, color, showInside };
+          return { s, si, y, h, fullH, color, showInside, settledMid };
         });
+
+        // Thin segments escape their labels to the right; several thin segments
+        // in a row would stack those labels on top of each other, so declutter
+        // them on the shared label-layout layer and draw a leader line whenever a
+        // label is pushed off its segment's mid-height.
+        const escaped = rects.filter((r) => !r.showInside);
+        const escapedY = resolveLabelPositions(
+          escaped.map((r) => ({ target: r.settledMid, size: segValueSize + 8 })),
+          { gap: 6, min: chartTop + segValueSize / 2, max: chartBottom - segValueSize / 2 },
+        );
+        const labelYBySeg = new Map<number, number>();
+        escaped.forEach((r, k) => labelYBySeg.set(r.si, escapedY[k]!));
 
         return (
           <g key={ci}>
@@ -135,20 +152,41 @@ export const ProportionBox = ({ spec }: { spec: ProportionSpec }) => {
                     </text>
                   </>
                 ) : (
-                  // Thin segment: label to the right so it never clips.
-                  <text
-                    x={x + barW + 14}
-                    y={r.y + r.h / 2}
-                    fill={TEXT}
-                    fontSize={segValueSize}
-                    textAnchor="start"
-                    dominantBaseline="central"
-                    opacity={grow}
-                    style={{ fontVariantNumeric: "tabular-nums" }}
-                  >
-                    {r.s.label} {r.s.value.toFixed(decimals)}
-                    {unit}
-                  </text>
+                  // Thin segment: label escapes to the right, decluttered against
+                  // its siblings; a leader line bridges the gap when it is nudged
+                  // off the segment's own mid-height.
+                  (() => {
+                    const ly = labelYBySeg.get(r.si) ?? r.settledMid;
+                    const segMid = r.y + r.h / 2;
+                    const lx = x + barW;
+                    const drift = Math.abs(ly - segMid) > segValueSize * 0.6;
+                    return (
+                      <>
+                        {drift && (
+                          <polyline
+                            points={`${lx},${segMid} ${lx + 8},${ly} ${lx + 12},${ly}`}
+                            fill="none"
+                            stroke={GRID}
+                            strokeWidth={1.5}
+                            opacity={grow}
+                          />
+                        )}
+                        <text
+                          x={lx + 14}
+                          y={ly}
+                          fill={TEXT}
+                          fontSize={segValueSize}
+                          textAnchor="start"
+                          dominantBaseline="central"
+                          opacity={grow}
+                          style={{ fontVariantNumeric: "tabular-nums" }}
+                        >
+                          {r.s.label} {r.s.value.toFixed(decimals)}
+                          {unit}
+                        </text>
+                      </>
+                    );
+                  })()
                 )}
               </g>
             ))}
