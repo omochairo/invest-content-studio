@@ -27,11 +27,13 @@ import {
   type ContentPackage,
   type ExplainerMetrics,
   type FinancialStatements,
+  type InterpretationProfile,
   type NarrationLine,
   type Scene,
   type Source,
   balanceSheetToProportionSpec,
   deriveExplainerMetrics,
+  deriveInterpretationProfile,
   deriveSegmentFacts,
   incomeStatementToWaterfallSpec,
   segmentsToProportionSpec,
@@ -257,8 +259,16 @@ interface BeatPlan {
   focus: string;
 }
 
-/** Ordered beat plan; a visual beat is included only if its asset exists. */
-export function buildExplainerPlan(assets: Asset[], fs: FinancialStatements): BeatPlan[] {
+/** Ordered beat plan; a visual beat is included only if its asset exists. The
+ *  stage-1 interpretation profile (derived deterministically when not supplied so
+ *  every caller — generate / Jules request / harvest — agrees on the same plan)
+ *  suppresses beats whose default framing misleads for this archetype and reframes
+ *  the margin / BS-ratio focus. */
+export function buildExplainerPlan(
+  assets: Asset[],
+  fs: FinancialStatements,
+  profile: InterpretationProfile = deriveInterpretationProfile(fs),
+): BeatPlan[] {
   const has = (id: string) => assets.some((a) => a.id === id);
   const plan: BeatPlan[] = [
     {
@@ -267,7 +277,10 @@ export function buildExplainerPlan(assets: Asset[], fs: FinancialStatements): Be
       focus: `つかみ。${fs.companyName} が何を事業の柱とし、どう収益を上げている会社かを、公開情報に基づく事実として1文で示す（テンプレ的な定型句で済ませない）。そのうえで ${fs.periods[0]?.period ?? ""} の財務諸表を、数字の意味まで読み解くと予告する。`,
     },
   ];
-  if (has("pl-waterfall"))
+  // The PL waterfall lumps every expense into one coarse drop for filers without a
+  // gross-profit line; for banks/holdings that lump is meaningless or misleading,
+  // so the profile suppresses it.
+  if (has("pl-waterfall") && !profile.suppress.plWaterfall)
     plan.push({
       visualRef: "pl-waterfall",
       section: "損益",
@@ -278,6 +291,7 @@ export function buildExplainerPlan(assets: Asset[], fs: FinancialStatements): Be
       visualRef: "pl-ratios",
       section: "損益",
       focus:
+        profile.marginFocus ??
         "粗利率・営業利益率・純利益率の水準を読み解く。定義の言い換えで終わらせず、この水準が『この企業の事業モデル』（何を売り、原価・販管費・研究開発のどこに費用の重心がある事業構造か）の観点から何を意味するかを、報告済みの事実として一段踏み込んで説明する。売買の含意や将来予測は出さない。",
     });
   if (has("rev-trend"))
@@ -306,6 +320,7 @@ export function buildExplainerPlan(assets: Asset[], fs: FinancialStatements): Be
       visualRef: "bs-ratios",
       section: "財務",
       focus:
+        profile.bsFocus ??
         "自己資本比率・流動比率・利益剰余金の厚みを読み解き、稼いだ利益が利益剰余金として社内に蓄積し自己資本の厚みにつながっている、というPLとBSの事実の連関に触れる。良し悪しの評価はしない。",
     });
   if (has("human-capital"))
@@ -341,7 +356,12 @@ const RESPONSE_SCHEMA = {
   required: ["title", "beats"],
 };
 
-export function buildPrompt(fs: FinancialStatements, plan: BeatPlan[], retryNote = ""): string {
+export function buildPrompt(
+  fs: FinancialStatements,
+  plan: BeatPlan[],
+  retryNote = "",
+  profile: InterpretationProfile = deriveInterpretationProfile(fs),
+): string {
   const beats = plan
     .map(
       (b, i) =>
@@ -357,8 +377,11 @@ export function buildPrompt(fs: FinancialStatements, plan: BeatPlan[], retryNote
 - 利回り・元本の保証をしない（「儲かる」「損しない」「元本保証」「リスクなし」等は禁止）。
 - 数値は下記「確定データ」の値だけを使う。新しい数値を創作しない。比率の四捨五入も確定データの表記に従う。
 
+# この企業の読み解き軸（最優先・下の一般指針より優先）
+${profile.axisNote}
+
 # 読み解きの深さ（重要：数字の読み上げで終わらせない）
-この台本の価値は、図表を読み上げることではなく、数字が財務構造について「何を意味するか」を一段踏み込んで説明することにある。各ビートで次を満たす:
+この台本の価値は、図表を読み上げることではなく、数字が財務構造について「何を意味するか」を一段踏み込んで説明することにある。上の『読み解き軸』を主役に据えたうえで、各ビートで次を満たす:
 - 規模感を言語化する。複数期で大きく動いた数値は「増加傾向」で済ませず、何倍・どの程度の変化かを具体的に述べる。
 - 比率は定義の言い換えで終わらせない。その水準が費用構造・資本構成について示す事実を説明する（例：原価率が小さい＝売上に対し直接費用の比重が小さい収益構造）。
 - 損益（PL）と財務（BS）を事実として関連づける（例：高い利益率が利益剰余金として積み上がり、それが自己資本の厚みにつながっている、という報告値どうしの連関）。

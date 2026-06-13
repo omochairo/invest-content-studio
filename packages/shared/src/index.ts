@@ -5,3 +5,4 @@ export * from "./earningsEvent";
 export * from "./companyProfile";
 export * from "./financialStatements";
 export * from "./labelLayout";
+export * from "./interpretationProfile";
