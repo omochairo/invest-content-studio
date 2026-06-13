@@ -73,9 +73,14 @@ jobs:
     if: ${{ needs.select.outputs.count != '0' }}
     strategy:
       fail-fast: false
-      # Gemini free tier is 5 generate RPM/model; cap concurrent shards so the
-      # batch doesn't burst past it (callGemini also retries 429 as a backstop).
-      max-parallel: 3
+      # Serialize the batch: Gemini's free tier caps generate_content at 5
+      # RPM/model, and fanning a 10-20 symbol batch in parallel trips 429 even
+      # with retries (observed: fast gate-only shards cycle quicker than the rate
+      # window drains). One shard at a time keeps gen calls ~1/min — structurally
+      # under the limit — at the cost of wall-clock, which is irrelevant for an
+      # unattended daily cron. callGemini's 429 retry is now just a transient
+      # backstop. (If a paid Gemini tier lifts the RPM cap, raise this.)
+      max-parallel: 1
       matrix:
         include: ${{ fromJson(needs.select.outputs.batch) }}
     runs-on: ubuntu-22.04
