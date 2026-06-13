@@ -5,14 +5,19 @@ name: financials-explainer-jules
 # with the deepest path; Gemini generate:fin in financials-explainer.yml is the fast
 # fallback).
 #
-# For each selected ticker it refreshes the FinancialStatements (so the Jules prompt
+# For each selected symbol it refreshes the FinancialStatements (so the Jules prompt
 # carries the current code-derived fact sheet), then dispatches ONE Jules session per
 # symbol. Jules researches the company's business model deeply and opens an auto-PR
 # adding jules-research/<SYMBOL>-explainer.prose.json (prose only — title + beats).
 # The numbers and visuals are NOT Jules's job; they are re-derived in code by harvest.
 #
-# After the Jules PR is merged, run financials-explainer.yml with gen_source=jules to
-# harvest that prose into a gated ContentPackage and render the mp4.
+# The `market` input picks the fetch source, exactly like financials-explainer.yml:
+# us=FMP ticker (T1) or jp=EDINET via ラジ株ナビ 4-digit TSE code (T2). Both land the
+# same outputs/financials/<SYMBOL>.json shape, so the request:jules:fin prompt builder
+# and harvest are source-agnostic — JP (e.g. 7203) is Jules-primary on equal footing.
+#
+# After the Jules PR is merged, run financials-explainer.yml with the same market and
+# gen_source=jules to harvest that prose into a gated ContentPackage and render the mp4.
 #
 # The Jules quota is SHARED with omochairo (Pro 100/day, rolling 24h), so
 # request:jules:fin gates on recent creations (JULES_DAILY_CAP, default 80) and
@@ -23,12 +28,20 @@ on:
   workflow_dispatch:
     inputs:
       symbols:
-        description: "Tickers to deep-dive via Jules (space-separated), e.g. NVDA AAPL"
+        description: "Symbols to deep-dive via Jules (space-separated). us=tickers (NVDA AAPL), jp=4-digit TSE codes (7203)"
         default: "NVDA"
         required: true
       years:
         description: "Number of fiscal years (annual), newest first"
         default: "5"
+        required: true
+      market:
+        description: "Data source: us (FMP, tickers) or jp (EDINET via ラジ株ナビ, 4-digit TSE codes)"
+        type: choice
+        options:
+          - us
+          - jp
+        default: us
         required: true
 
 permissions:
@@ -44,10 +57,19 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Refresh FinancialStatements so the Jules prompt has current fact sheets
+      # Refresh the FinancialStatements so the Jules prompt carries the current
+      # code-derived fact sheet. Source-split mirrors financials-explainer.yml: US
+      # tickers via FMP, JP 4-digit TSE codes via EDINET (residual/reconciliation mapper).
+      - name: T1 Refresh FinancialStatements (FMP, US)
+        if: ${{ github.event.inputs.market != 'jp' }}
         env:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
         run: npm run fetch:fin -- ${{ github.event.inputs.symbols }} --years "${{ github.event.inputs.years || '5' }}"
+      - name: T2 Refresh FinancialStatements (EDINET via ラジ株ナビ, JP)
+        if: ${{ github.event.inputs.market == 'jp' }}
+        env:
+          RADIKABUNAVI_API_KEY: ${{ secrets.RADIKABUNAVI_API_KEY }}
+        run: npm run fetch:fin:jp -- ${{ github.event.inputs.symbols }} --years "${{ github.event.inputs.years || '5' }}"
       - name: Dispatch Jules deep-dive sessions (quota-gated, shared with omochairo)
         env:
           JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
