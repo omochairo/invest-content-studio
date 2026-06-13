@@ -1,5 +1,5 @@
 import { spring, useCurrentFrame, useVideoConfig } from "remotion";
-import type { ScatterSpec } from "@ics/shared";
+import { resolveLabelPositions, type ScatterSpec } from "@ics/shared";
 
 const AXIS = "#33425a";
 const GRID = "#1b2838";
@@ -91,23 +91,63 @@ export const ScatterPlot = ({ spec }: { spec: ScatterSpec }) => {
           transform={`rotate(-90 26 ${PT + plotH / 2})`}>{spec.yLabel}</text>
       )}
 
-      {/* points */}
-      {pts.map((p, i) => {
-        const pop = spring({ frame: frame - 10 - i * 4, fps, config: { damping: 14, stiffness: 120 } });
-        const cx = sx(p.x);
-        const cy = sy(p.y);
-        const color = PALETTE[i % PALETTE.length];
-        // place label above the dot, or below if near the top edge
-        const below = cy - 30 < PT;
-        return (
-          <g key={i} opacity={Math.min(1, pop)}>
-            <circle cx={cx} cy={cy} r={dotR * 2.2} fill={color} opacity={0.18 * pop} />
-            <circle cx={cx} cy={cy} r={dotR * pop} fill={color} stroke="#0b1220" strokeWidth={2} />
-            <text x={cx} y={below ? cy + dotR + labelSize : cy - dotR - 10}
-              fill="#fff" fontSize={labelSize} fontWeight={800} textAnchor="middle">{p.label}</text>
-          </g>
-        );
-      })}
+      {/* points — label y positions are decluttered (文字重なり自動回避) per
+          horizontal cluster on the shared layout layer: labels only collide when
+          their dots are close in BOTH axes, so we group points whose label boxes
+          overlap in x and resolve overlaps within each group, leaving distant
+          labels untouched. A leader line bridges any label nudged off its dot. */}
+      {(() => {
+        const charW = labelSize * 0.62; // CJK/latin mix estimate
+        const dots = pts.map((p, i) => {
+          const cx = sx(p.x);
+          const cy = sy(p.y);
+          const below = cy - 30 < PT;
+          const ly = below ? cy + dotR + labelSize : cy - dotR - 10;
+          return { p, i, cx, cy, below, ly, w: Math.max(p.label.length * charW, dotR * 4) };
+        });
+        const byX = [...dots].sort((a, b) => a.cx - b.cx);
+        const clusters: (typeof dots)[] = [];
+        let cur: typeof dots = [];
+        let curRight = -Infinity;
+        for (const d of byX) {
+          if (cur.length && d.cx - d.w / 2 > curRight) {
+            clusters.push(cur);
+            cur = [];
+          }
+          cur.push(d);
+          curRight = Math.max(curRight, d.cx + d.w / 2);
+        }
+        if (cur.length) clusters.push(cur);
+        const lyById = new Map<number, number>();
+        for (const cl of clusters) {
+          if (cl.length === 1) {
+            lyById.set(cl[0]!.i, cl[0]!.ly);
+            continue;
+          }
+          const resolved = resolveLabelPositions(
+            cl.map((d) => ({ target: d.ly, size: labelSize + 4 })),
+            { gap: 4, min: PT + labelSize / 2, max: PT + plotH + PB - labelSize },
+          );
+          cl.forEach((d, k) => lyById.set(d.i, resolved[k]!));
+        }
+        return dots.map(({ p, i, cx, cy }) => {
+          const pop = spring({ frame: frame - 10 - i * 4, fps, config: { damping: 14, stiffness: 120 } });
+          const color = PALETTE[i % PALETTE.length];
+          const ly = lyById.get(i) ?? cy - dotR - 10;
+          const drift = Math.abs(ly - cy) > dotR + labelSize;
+          return (
+            <g key={i} opacity={Math.min(1, pop)}>
+              <circle cx={cx} cy={cy} r={dotR * 2.2} fill={color} opacity={0.18 * pop} />
+              <circle cx={cx} cy={cy} r={dotR * pop} fill={color} stroke="#0b1220" strokeWidth={2} />
+              {drift && (
+                <line x1={cx} y1={cy} x2={cx} y2={ly + (ly > cy ? -labelSize * 0.7 : labelSize * 0.3)}
+                  stroke={color} strokeWidth={1.5} opacity={0.5 * pop} />
+              )}
+              <text x={cx} y={ly} fill="#fff" fontSize={labelSize} fontWeight={800} textAnchor="middle">{p.label}</text>
+            </g>
+          );
+        });
+      })()}
     </svg>
   );
 };
