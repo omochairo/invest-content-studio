@@ -92,6 +92,35 @@ test("financialized industrial (Toyota: segment assets) → financialized-indust
   assert.equal(p.suppress.plWaterfall, false);
 });
 
+test("trading company (Mitsubishi 8058 shape: op n/a, big trading revenue, many segments) → trading-company", () => {
+  // op==null like a holding, but turnover ~0.78 (large trading revenue) over 9 segments
+  // — must NOT be misrouted to financialized-industrial (Toyota) nor investment-holding (SBG).
+  const segs: BusinessSegment[] = [
+    { name: "天然ガス", nameRaw: "Gas", sales: 2 * T, operatingIncome: null, assets: 2 * T },
+    { name: "金属資源", nameRaw: "Metals", sales: 3 * T, operatingIncome: null, assets: 3 * T },
+  ];
+  const p = deriveInterpretationProfile(
+    make({ revenue: 18.9 * T, operatingIncome: null, netIncome: 0.95 * T, totalAssets: 24.2 * T, totalEquity: 10.3 * T, segments: segs }),
+  );
+  assert.equal(p.archetype, "trading-company");
+  assert.equal(p.suppress.operatingMargin, true);
+  assert.equal(p.suppress.plWaterfall, true);
+  assert.ok(p.assetTurnover! >= 0.6);
+  assert.ok(p.bsFocus && p.marginFocus);
+});
+
+test("a low-turnover holding with segments stays investment-holding (not trading-company)", () => {
+  // op==null + segments but tiny turnover (pure investment holding) → step 2 wins.
+  const segs: BusinessSegment[] = [
+    { name: "投資", nameRaw: "Invest", sales: 1 * T, operatingIncome: null, assets: 20 * T },
+    { name: "通信", nameRaw: "Telecom", sales: 2 * T, operatingIncome: null, assets: 15 * T },
+  ];
+  const p = deriveInterpretationProfile(
+    make({ revenue: 7 * T, operatingIncome: null, netIncome: 1.1 * T, totalAssets: 45 * T, totalEquity: 14 * T, segments: segs }),
+  );
+  assert.equal(p.archetype, "investment-holding");
+});
+
 test("US tech (NVDA shape, full PL) → standard, nothing suppressed", () => {
   const p = deriveInterpretationProfile(
     make({ revenue: 0.22 * T, operatingIncome: 0.13 * T, grossProfit: 0.15 * T, netIncome: 0.12 * T, totalAssets: 0.21 * T, totalEquity: 0.16 * T }),

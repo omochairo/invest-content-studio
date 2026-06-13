@@ -25,6 +25,7 @@ import { buildExplainerAssets, buildExplainerPlan, buildPrompt } from "./generat
 const ARCHETYPE_LABEL: Record<string, string> = {
   "financial-institution": "金融機関（銀行・保険）型＝BSそのものが事業",
   "investment-holding": "投資持株型＝純利益が投資成果で変動",
+  "trading-company": "総合商社型＝多角的な事業投資ポートフォリオ＋持分法投資損益が利益の柱",
   "financialized-industrial": "金融子会社を抱える製造業型＝売上と資産構成のズレ",
   standard: "標準的な事業会社型＝費用構造と利益の蓄積",
 };
