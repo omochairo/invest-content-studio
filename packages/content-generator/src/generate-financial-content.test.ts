@@ -9,6 +9,7 @@ import {
   assembleExplainer,
   buildExplainerAssets,
   buildExplainerPlan,
+  buildPrompt,
   explainerFactSheet,
 } from "./generate-financial-content";
 import { complianceGate, validateContentPackage } from "./gate";
@@ -114,6 +115,20 @@ test("assembleExplainer - passes validate + §2 compliance, wide format, section
   assert.equal(pkg.scenes[1]!.visualRef, "pl-waterfall");
   assert.ok(validateContentPackage(pkg).ok, validateContentPackage(pkg).errors.join("; "));
   assert.ok(complianceGate(pkg).ok, complianceGate(pkg).errors.join("; "));
+});
+
+test("buildPrompt - demands business-model grounding + anti-template, keeps §2 framing", () => {
+  const fs = nvda();
+  const prompt = buildPrompt(fs, buildExplainerPlan(buildExplainerAssets(fs), fs));
+  // E深化: the interpretation must be grounded in the company's own business model
+  // (the moat) rather than a number-filled template — see depth block.
+  assert.match(prompt, /事業モデル/);
+  assert.match(prompt, /使い回さない/);
+  // intro beat now asks what the company does, as fact (not a boilerplate opener).
+  assert.match(prompt, /事業の柱/);
+  // §2 invariant must survive the deepening: no buy/sell, no forecasts.
+  assert.match(prompt, /売買の推奨・指示は一切しない/);
+  assert.match(prompt, /断定的な将来予測をしない/);
 });
 
 test("buildExplainerAssets - omits trend when only one period has revenue", () => {
