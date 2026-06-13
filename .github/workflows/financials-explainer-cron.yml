@@ -168,10 +168,14 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Download ContentPackages that actually landed
+      # Derive marks from the mp4 bundle (cron-fin-explainer-*), NOT the content
+      # artifact: the ledger means "video produced", so a gate-only (render=false)
+      # run uploads no mp4 and this job is a natural no-op — it never advances the
+      # rotation past symbols that were not actually rendered.
+      - name: Download rendered explainer bundles that actually landed
         uses: actions/download-artifact@v4
         with:
-          pattern: cron-fin-content-*
+          pattern: cron-fin-explainer-*
           path: dl
           merge-multiple: true
       - name: Mark generated symbols + commit rotation ledger
@@ -179,7 +183,7 @@ jobs:
           syms=$(ls dl/*-explainer.json 2>/dev/null \
             | sed -E 's#.*/([^/]+)-explainer\.json#\1#' | tr '\n' ' ')
           echo "rendered symbols: ${syms:-<none>}"
-          if [ -z "$syms" ]; then echo "nothing landed — no ledger update"; exit 0; fi
+          if [ -z "$syms" ]; then echo "nothing rendered — no ledger update"; exit 0; fi
           npm run mark:explainer -- $syms
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
