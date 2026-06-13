@@ -30,9 +30,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
 import {
   type BalanceSheet,
+  type BusinessSegment,
   type CashFlowStatement,
   type FinancialPeriod,
   type FinancialStatements,
+  type HumanCapital,
   type IncomeStatement,
 } from "@ics/shared";
 
@@ -222,6 +224,78 @@ export function toCashFlowJP(fy: EdinetFy): CashFlowStatement {
   };
 }
 
+/**
+ * XBRL segment token (after stripping the "ReportableSegment(s)"/"Business"
+ * suffix) -> Japanese display name. Unknown tokens fall back to a de-camelCased
+ * form; a bare aggregate row ("ReportableSegments") is dropped (it double-counts).
+ */
+const SEGMENT_NAMES: Record<string, string> = {
+  Automotive: "自動車",
+  FinancialServices: "金融",
+  GameAndNetworkServices: "ゲーム＆ネットワーク",
+  Music: "音楽",
+  Pictures: "映画",
+  EntertainmentTechnologyAndServices: "ET＆S",
+  ImagingAndSensingSolutions: "イメージング＆センシング",
+  SoftBank: "ソフトバンク",
+  Arm: "アーム",
+  HoldingCompanyInvestment: "持株会社投資事業",
+  SoftBankVisionFunds: "ビジョン・ファンド",
+  Other: "その他",
+  AllOther: "その他",
+};
+
+/** Map a raw segment token to a JP name, or null to DROP it (aggregate subtotal). */
+function mapSegmentName(raw: string): string | null {
+  // The "...NotIncludedInReportableSegments..." reconciliation bucket is just その他.
+  if (/NotIncludedInReportable|OtherRevenueGenerating/i.test(raw)) return "その他";
+  const core = raw
+    .replace(/ReportableSegments?$/i, "")
+    .replace(/Business$/i, "")
+    .replace(/Segments?$/i, "");
+  if (core === "") return null; // was exactly "ReportableSegments" — a subtotal row.
+  return SEGMENT_NAMES[core] ?? core.replace(/([a-z])([A-Z])/g, "$1 $2");
+}
+
+/** One raw EDINET segment row (subset of fields used). */
+type EdinetSegment = { segmentName?: string; sales?: unknown; operatingIncome?: unknown; assets?: unknown };
+
+/**
+ * Extract the latest period's reportable segments (JP-only). Aggregate subtotal
+ * rows are dropped; a segment with neither sales nor operating income is skipped
+ * (no structural signal). Returns undefined when there is no usable multi-segment
+ * breakdown, so the downstream segment visual/beat is omitted gracefully.
+ */
+export function extractSegments(fy: EdinetFy): BusinessSegment[] | undefined {
+  const raw = fy.segments;
+  if (!Array.isArray(raw)) return undefined;
+  const out: BusinessSegment[] = [];
+  for (const s of raw as EdinetSegment[]) {
+    const token = String(s.segmentName ?? "");
+    const name = mapSegmentName(token);
+    if (name == null) continue; // aggregate/subtotal row
+    const sales = n(s.sales);
+    const operatingIncome = n(s.operatingIncome);
+    const assets = n(s.assets);
+    if (sales == null && operatingIncome == null) continue;
+    out.push({ name, nameRaw: token, sales, operatingIncome, assets });
+  }
+  return out.length >= 2 ? out : undefined;
+}
+
+/** Extract the 有報 human-capital block (JP-only); undefined when nothing present. */
+export function extractHumanCapital(fy: EdinetFy): HumanCapital | undefined {
+  const hc: HumanCapital = {
+    employees: fnum(fy, "numberOfEmployees"),
+    avgAnnualSalary: fnum(fy, "avgAnnualSalary"),
+    avgAgeYears: fnum(fy, "avgAgeYears"),
+    avgTenureYears: fnum(fy, "avgTenureYears"),
+    salesPerEmployee: fnum(fy, "salesPerEmployee"),
+    operatingIncomePerEmployee: fnum(fy, "operatingIncomePerEmployee"),
+  };
+  return Object.values(hc).some((v) => v != null) ? hc : undefined;
+}
+
 interface EdinetResponse {
   companyName?: string;
   metadata?: { latestFiscalYear?: string };
@@ -263,6 +337,10 @@ export function buildStatementsJP(
 
   const latestKey = res.metadata?.latestFiscalYear ?? "";
   const latest = res.fiscalYears?.[latestKey] ?? {};
+  // JP-only structural data is taken from the latest filing (the segment note and
+  // 有報 human-capital block); both are optional and omitted when absent.
+  const segments = extractSegments(latest);
+  const humanCapital = extractHumanCapital(latest);
   return {
     symbol: code,
     companyName: res.companyName ?? code,
@@ -271,6 +349,8 @@ export function buildStatementsJP(
     accountingStandard: (latest.accountingStandard as string) ?? null,
     asOf: new Date().toISOString().slice(0, 10),
     periods,
+    ...(segments ? { segments } : {}),
+    ...(humanCapital ? { humanCapital } : {}),
     source: {
       provider: "radiokabu-edinet",
       url: (latest.edinetFilingUrl as string) ?? "https://radikabunavi.com/",

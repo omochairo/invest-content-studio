@@ -138,3 +138,38 @@ test("buildExplainerAssets - omits trend when only one period has revenue", () =
   assert.ok(!ids.includes("rev-trend"));
   assert.ok(ids.includes("pl-waterfall") && ids.includes("bs-proportion"));
 });
+
+test("US (no segments) keeps the JP-only assets/beats absent", () => {
+  const ids = buildExplainerAssets(nvda()).map((a) => a.id);
+  assert.ok(!ids.includes("seg-structure") && !ids.includes("human-capital"));
+});
+
+test("JP segments + human capital add the 事業構造 / 人的資本 beats + fact-sheet lines", () => {
+  const fs = nvda();
+  fs.market = "JP";
+  fs.currency = "JPY";
+  fs.segments = [
+    { name: "自動車", nameRaw: "AutomotiveReportableSegment", sales: 41e12, operatingIncome: 4.6e12, assets: 29e12 },
+    { name: "金融", nameRaw: "FinancialServicesReportableSegment", sales: 3.4e12, operatingIncome: 0.57e12, assets: 43e12 },
+    { name: "その他", nameRaw: "OtherReportableSegments", sales: 0.5e12, operatingIncome: 0.17e12, assets: 3e12 },
+  ];
+  fs.humanCapital = {
+    employees: 383853, avgAnnualSalary: 9_825_635, avgAgeYears: 40.7,
+    avgTenureYears: 15.6, salesPerEmployee: 125_143_489, operatingIncomePerEmployee: 12_493_287,
+  };
+  const assets = buildExplainerAssets(fs);
+  const plan = buildExplainerPlan(assets, fs);
+  assert.ok(assets.some((a) => a.id === "seg-structure" && a.type === "proportion"));
+  assert.ok(assets.some((a) => a.id === "human-capital" && a.type === "stats"));
+  assert.deepEqual(
+    plan.map((b) => b.section),
+    ["イントロ", "損益", "損益", "成長", "事業構造", "財務", "財務", "人的資本", "まとめ"],
+  );
+  const sheet = explainerFactSheet(fs);
+  assert.match(sheet, /事業セグメント/);
+  assert.match(sheet, /売上比で資産が突出/);
+  assert.match(sheet, /従業員数 383,853名/);
+  const prompt = buildPrompt(fs, plan);
+  assert.match(prompt, /売上構成と資産構成の『ズレ』/);
+  assert.match(prompt, /売買の推奨・指示は一切しない/);
+});

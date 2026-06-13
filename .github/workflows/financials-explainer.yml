@@ -62,6 +62,10 @@ on:
         description: "Run the heavy TTS+render stage"
         type: boolean
         default: true
+      upload:
+        description: "Upload the rendered mp4 to YouTube (PRIVATE). Requires render."
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -225,3 +229,19 @@ jobs:
           name: fin-thumbnail-${{ matrix.symbol }}
           path: packages/video-generator/out/${{ matrix.symbol }}.thumb.png
           if-no-files-found: error
+
+      # ── YouTube upload (PRIVATE) — opt-in (dispatch upload=true) ─────────────
+      # yt:upload reads outputs/content/<SLUG>.json + out/<SLUG>.mp4; the explainer
+      # content lives at <SYMBOL>-explainer.json, so alias it to <SYMBOL>.json first
+      # (the mp4 is already out/<SYMBOL>.mp4). Metadata (title/disclaimer/sources/
+      # chapters) is built from the ContentPackage, so §2 travels with the video.
+      - name: Upload to YouTube (PRIVATE)
+        if: ${{ github.event.inputs.render != 'false' && github.event.inputs.upload == 'true' }}
+        env:
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          YOUTUBE_PRIVACY: private
+        run: |
+          cp "outputs/content/$SYMBOL-explainer.json" "outputs/content/$SYMBOL.json"
+          npm run yt:upload -- "$SYMBOL"

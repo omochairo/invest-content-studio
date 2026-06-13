@@ -32,7 +32,9 @@ import {
   type Source,
   balanceSheetToProportionSpec,
   deriveExplainerMetrics,
+  deriveSegmentFacts,
   incomeStatementToWaterfallSpec,
+  segmentsToProportionSpec,
 } from "@ics/shared";
 import { complianceGate, validateContentPackage } from "./gate";
 
@@ -92,6 +94,60 @@ function buildRatioAssets(m: ExplainerMetrics): Asset[] {
   return assets;
 }
 
+/** 万円 with locale commas, for the people-side per-employee/salary figures. */
+const man = (rawYen: number | null) =>
+  rawYen == null ? "不明" : `${Math.round(rawYen / 1e4).toLocaleString("ja-JP")}万円`;
+/** Big-yen amount in 兆円 (≥1兆) else 億円, 1 dp — for segment figures. */
+const bigYen = (raw: number | null) =>
+  raw == null
+    ? "不明"
+    : Math.abs(raw) >= 1e12
+      ? `${(raw / 1e12).toFixed(1)}兆円`
+      : `${(raw / 1e8).toFixed(1)}億円`;
+
+/**
+ * JP-only segment-structure proportion (売上構成 ｜ セグメント資産). Present only when
+ * the EDINET filing disclosed ≥2 segments; absent for US (FMP) or single-segment
+ * filers, so the beat is omitted gracefully. This is the moat visual + the
+ * 金融子会社の BS 膨張 story (a finance segment's tiny revenue vs huge asset slab).
+ */
+function buildSegmentAsset(fs: FinancialStatements): Asset | null {
+  const spec = segmentsToProportionSpec(fs);
+  if (!spec.columns.length) return null;
+  return { id: "seg-structure", type: "proportion", spec };
+}
+
+/** JP-only human-capital stat grid (有報 disclosure); null when absent (US). */
+function buildHumanCapitalAsset(fs: FinancialStatements): Asset | null {
+  const hc = fs.humanCapital;
+  if (!hc) return null;
+  const items = [
+    hc.employees != null
+      ? { label: "従業員数", value: `${hc.employees.toLocaleString("ja-JP")}名`, note: "連結" }
+      : null,
+    hc.avgAnnualSalary != null
+      ? {
+          label: "平均年間給与",
+          value: man(hc.avgAnnualSalary),
+          note: [
+            hc.avgAgeYears != null ? `平均年齢${hc.avgAgeYears}歳` : null,
+            hc.avgTenureYears != null ? `勤続${hc.avgTenureYears}年` : null,
+          ]
+            .filter(Boolean)
+            .join("・") || "提出会社",
+        }
+      : null,
+    hc.salesPerEmployee != null
+      ? { label: "一人当たり売上高", value: man(hc.salesPerEmployee), note: "売上高÷従業員数" }
+      : null,
+    hc.operatingIncomePerEmployee != null
+      ? { label: "一人当たり営業利益", value: man(hc.operatingIncomePerEmployee), note: "営業利益÷従業員数" }
+      : null,
+  ].filter((i): i is { label: string; value: string; note: string } => i != null);
+  if (items.length < 2) return null;
+  return { id: "human-capital", type: "stats", spec: { kind: "stats", items } };
+}
+
 /** Multi-year revenue trend (oldest->newest, 億 unit) from periods. */
 function buildRevTrend(fs: FinancialStatements): Asset | null {
   const unit = unitOf(fs);
@@ -114,10 +170,14 @@ export function buildExplainerAssets(fs: FinancialStatements): Asset[] {
   const pl = ratios.find((a) => a.id === "pl-ratios");
   const bs = ratios.find((a) => a.id === "bs-ratios");
   const trend = buildRevTrend(fs);
-  // Order: PL waterfall, PL ratios, revenue trend, BS proportion, BS ratios.
+  const seg = buildSegmentAsset(fs); // JP-only; null for US / single-segment
+  const hc = buildHumanCapitalAsset(fs); // JP-only; null for US
+  // Order: PL waterfall, PL ratios, revenue trend, segment structure, BS
+  // proportion, BS ratios, human capital. The JP-only segment/human-capital
+  // assets are simply absent for US, leaving that pipeline unchanged.
   const wf = assets.find((a) => a.id === "pl-waterfall");
   const prop = assets.find((a) => a.id === "bs-proportion");
-  return [wf, pl, trend, prop, bs].filter((a): a is Asset => a != null);
+  return [wf, pl, trend, seg, prop, bs, hc].filter((a): a is Asset => a != null);
 }
 
 function buildSources(fs: FinancialStatements): Source[] {
@@ -153,6 +213,38 @@ export function explainerFactSheet(fs: FinancialStatements): string {
     lines.push(
       `売上推移: ${[...hist].reverse().map((q) => `${q.period} ${oku(q.incomeStatement.revenue, u)}`).join(" → ")}`,
     );
+
+  // JP-only: business segments (構造の可視化) — the revenue-vs-asset asymmetry that
+  // drives 金融子会社の BS 膨張 is spelled out explicitly so prose can cite it.
+  if (fs.segments?.length) {
+    const sf = deriveSegmentFacts(fs);
+    lines.push("— 事業セグメント（最新期）—");
+    for (const s of sf.segments) {
+      const parts = [
+        `売上 ${bigYen(s.sales)}（構成${ratio(s.salesSharePct)}）`,
+        `営業利益 ${bigYen(s.operatingIncome)}（利益率${ratio(s.operatingMarginPct)}）`,
+      ];
+      if (s.assets != null)
+        parts.push(`セグメント資産 ${bigYen(s.assets)}（資産構成${ratio(s.assetSharePct)}）`);
+      lines.push(`${s.name}: ${parts.join(" / ")}`);
+    }
+    if (sf.assetHeavy)
+      lines.push(
+        `※${sf.assetHeavy.name}セグメントは売上構成${ratio(sf.assetHeavy.salesSharePct)}に対しセグメント資産構成${ratio(sf.assetHeavy.assetSharePct)}（売上比で資産が突出＝連結BSが膨らむ構造）`,
+      );
+  }
+
+  // JP-only: human-capital disclosure (有報).
+  const hc = fs.humanCapital;
+  if (hc) {
+    lines.push("— 人的資本（提出会社/連結）—");
+    lines.push(
+      `従業員数 ${hc.employees != null ? hc.employees.toLocaleString("ja-JP") + "名" : "不明"} / 平均年間給与 ${man(hc.avgAnnualSalary)} / 平均年齢 ${hc.avgAgeYears != null ? hc.avgAgeYears + "歳" : "不明"} / 平均勤続 ${hc.avgTenureYears != null ? hc.avgTenureYears + "年" : "不明"}`,
+    );
+    lines.push(
+      `一人当たり売上高 ${man(hc.salesPerEmployee)} / 一人当たり営業利益 ${man(hc.operatingIncomePerEmployee)}`,
+    );
+  }
   return lines.join("\n");
 }
 
@@ -195,6 +287,13 @@ export function buildExplainerPlan(assets: Asset[], fs: FinancialStatements): Be
       focus:
         "複数期の売上推移の変化の大きさを具体的に言語化する（何倍になったか等。「増加傾向」で済ませない）。前期比の伸びも述べる。断定的な将来予測はしない。",
     });
+  if (has("seg-structure"))
+    plan.push({
+      visualRef: "seg-structure",
+      section: "事業構造",
+      focus:
+        "事業セグメント別の構成。左の売上構成でどの事業が稼ぎの柱かを示したうえで、セグメント資産の列が開示されていれば、売上構成と資産構成の『ズレ』を読み解く。とくに金融・リース事業は売上比は小さくても資産を大きく抱えるため、連結の貸借対照表が膨らみ自己資本比率が構造的に低めに出る——という、この企業ならではの構造の非対称を、報告済みの事実として説明する。良し悪しの評価や売買の含意は出さない。",
+    });
   if (has("bs-proportion"))
     plan.push({
       visualRef: "bs-proportion",
@@ -208,6 +307,13 @@ export function buildExplainerPlan(assets: Asset[], fs: FinancialStatements): Be
       section: "財務",
       focus:
         "自己資本比率・流動比率・利益剰余金の厚みを読み解き、稼いだ利益が利益剰余金として社内に蓄積し自己資本の厚みにつながっている、というPLとBSの事実の連関に触れる。良し悪しの評価はしない。",
+    });
+  if (has("human-capital"))
+    plan.push({
+      visualRef: "human-capital",
+      section: "人的資本",
+      focus:
+        "人的資本。従業員数・平均給与・平均勤続年数といった有価証券報告書ならではの開示と、一人当たり売上高・営業利益という生産性指標を読み解く。その水準が事業モデル（労働集約か装置・資本集約か、付加価値の高い事業か等）の観点から何を示す事実かを、一段踏み込んで説明する。良し悪しの評価はしない。",
     });
   plan.push({
     visualRef: null,
@@ -258,6 +364,8 @@ export function buildPrompt(fs: FinancialStatements, plan: BeatPlan[], retryNote
 - 損益（PL）と財務（BS）を事実として関連づける（例：高い利益率が利益剰余金として積み上がり、それが自己資本の厚みにつながっている、という報告値どうしの連関）。
 - 数字を『この企業固有の事業モデル』に結びつける。何を売り、どこに費用の重心があり、どんな資産・資本構成の事業なのか——公開情報として確立した事業構造の背景を、該当する数値が「なぜそうなっているか」の説明として簡潔に添える（市場予測や未確認の個別事実の創作はしない）。
 - 各社で同じ言い回しを使い回さない。テンプレートに数値を流し込むのではなく、その企業の事業構造に即した固有の読み解きにする。
+- 確定データに「事業セグメント」がある場合は、構造の読み解きの主役にする。どの事業が稼ぎの柱かに加え、セグメント資産が開示されていれば売上構成と資産構成の『ズレ』（例：金融・リース事業は売上比は小さいのに資産を大きく抱える→連結BSが膨らみ自己資本比率が構造的に低めに出る）を、報告済みの事実として具体的な数値で示す。これはこの企業ならではの構造であり最大の読みどころ。
+- 確定データに「人的資本」がある場合は、一人当たり売上・営業利益や平均給与・勤続年数を、労働集約か装置・資本集約かといった事業モデルの観点から事実として読み解く。
 - ただし良し悪し・割安割高・売買適否・将来の評価はしない（§2厳守）。あくまで報告済みの構造が「どうなっているか」の説明に徹する。
 
 # 確定データ（この数値以外を本文に出さない）

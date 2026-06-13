@@ -5,6 +5,8 @@ import {
   toBalanceJP,
   toCashFlowJP,
   buildStatementsJP,
+  extractSegments,
+  extractHumanCapital,
 } from "./fetch-financials-jp";
 
 // A "messy" IFRS filer with a finance arm (トヨタ7203 FY2025 real shape): the
@@ -138,4 +140,53 @@ test("buildStatementsJP: newest-first, drops revenue-less (USGAAP) rows", () => 
   assert.equal(fs.source.provider, "radiokabu-edinet");
   assert.deepEqual(fs.periods.map((p) => p.period), ["FY2025", "FY2024"]);
   assert.equal(buildStatementsJP({ fiscalYears: {} }, "0000", 5), null);
+});
+
+test("extractSegments: maps JP names, keeps assets, requires ≥2", () => {
+  const fy = {
+    segments: [
+      { segmentName: "AutomotiveReportableSegment", sales: 41e12, operatingIncome: 4.6e12, assets: 29e12 },
+      { segmentName: "FinancialServicesReportableSegment", sales: 3.4e12, operatingIncome: 0.57e12, assets: 43e12 },
+      { segmentName: "OtherReportableSegments", sales: 0.5e12, operatingIncome: 0.17e12, assets: 3e12 },
+    ],
+  };
+  const segs = extractSegments(fy);
+  assert.ok(segs);
+  assert.deepEqual(segs.map((s) => s.name), ["自動車", "金融", "その他"]);
+  assert.equal(segs[1]!.assets, 43e12);
+  // A single segment has no structural signal → undefined.
+  assert.equal(extractSegments({ segments: [fy.segments[0]] }), undefined);
+  assert.equal(extractSegments({}), undefined);
+});
+
+test("extractSegments: drops the bare aggregate subtotal + sales-less reconciliation", () => {
+  // SoftBank-style: a pure "ReportableSegments" subtotal double-counts and must be
+  // dropped; a segment with neither sales nor operating income is skipped.
+  const fy = {
+    segments: [
+      { segmentName: "SoftBankReportableSegment", sales: 6e12, operatingIncome: 0.8e12 },
+      { segmentName: "ArmReportableSegment", sales: 0.46e12, operatingIncome: -0.03e12 },
+      { segmentName: "ReportableSegments", sales: 6.5e12, operatingIncome: 0.83e12 }, // subtotal → drop
+      { segmentName: "SoftBankVisionFundsBusinessReportableSegment", operatingIncome: 0.12e12 }, // has OI, kept
+      { segmentName: "EmptyReportableSegment" }, // no sales/OI → skip
+    ],
+  };
+  const segs = extractSegments(fy)!;
+  assert.deepEqual(segs.map((s) => s.name), ["ソフトバンク", "アーム", "ビジョン・ファンド"]);
+  assert.equal(segs[2]!.sales, null); // investment segment has no revenue
+});
+
+test("extractHumanCapital: present block vs absent", () => {
+  const hc = extractHumanCapital({
+    numberOfEmployees: 383853,
+    avgAnnualSalary: 9_825_635,
+    avgAgeYears: 40.7,
+    avgTenureYears: 15.6,
+    salesPerEmployee: 125_143_489,
+    operatingIncomePerEmployee: 12_493_287,
+  });
+  assert.ok(hc);
+  assert.equal(hc.employees, 383853);
+  assert.equal(hc.avgTenureYears, 15.6);
+  assert.equal(extractHumanCapital({}), undefined);
 });

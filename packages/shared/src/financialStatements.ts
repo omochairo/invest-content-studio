@@ -99,6 +99,48 @@ export interface CashFlowStatement {
   freeCashFlow: number | null;
 }
 
+/**
+ * One reportable business segment (EDINET セグメント情報 / IFRS segment note). This
+ * is JP-only structural data the US/FMP core endpoints don't expose in this shape;
+ * it is the project's "構造の可視化" moat. `assets` is the key tell: a finance /
+ * leasing subsidiary contributes a small slice of revenue yet carries a huge slice
+ * of segment assets, which is exactly why a JP issuer's consolidated balance sheet
+ * inflates and its 自己資本比率 reads structurally low (金融子会社の BS 膨張).
+ */
+export interface BusinessSegment {
+  /** Japanese display name, mapped from the XBRL token (e.g. 自動車 / 金融). */
+  name: string;
+  /** Raw XBRL segment token, kept for traceability (e.g. "AutomotiveReportableSegment"). */
+  nameRaw: string;
+  /** Segment revenue (reporting-currency raw unit); null when not reported. */
+  sales: number | null;
+  /** Segment operating income; null when not reported. */
+  operatingIncome: number | null;
+  /** Segment total assets — the BS-inflation tell; null when not reported. */
+  assets: number | null;
+}
+
+/**
+ * Human-capital disclosure from the 有価証券報告書 (mandatory in JP since FY2023).
+ * Another JP-only axis the US 10-K does not carry in structured form — average
+ * salary / tenure / age, plus the per-employee productivity ratios that read the
+ * people side of the business model (labor-intensive vs capital-intensive).
+ */
+export interface HumanCapital {
+  /** Consolidated employee count (numberOfEmployees). */
+  employees: number | null;
+  /** 平均年間給与 of the submitting company, in JPY (avgAnnualSalary). */
+  avgAnnualSalary: number | null;
+  /** 平均年齢 (avgAgeYears). */
+  avgAgeYears: number | null;
+  /** 平均勤続年数 (avgTenureYears). */
+  avgTenureYears: number | null;
+  /** 一人当たり売上高, in JPY (salesPerEmployee). */
+  salesPerEmployee: number | null;
+  /** 一人当たり営業利益, in JPY (operatingIncomePerEmployee). */
+  operatingIncomePerEmployee: number | null;
+}
+
 /** One fiscal period's full statements (consolidated, reporting currency). */
 export interface FinancialPeriod {
   /** Fiscal period label, e.g. "FY2025" or "FY2025 Q1". */
@@ -125,6 +167,14 @@ export interface FinancialStatements {
   asOf: string;
   /** Periods, newest first — the trend/animation charts iterate these. */
   periods: FinancialPeriod[];
+  /**
+   * JP-only reportable segments for the latest period (EDINET); undefined for US
+   * (FMP) or a single-segment filer. The segment-structure visual + 読み解き are
+   * skipped gracefully when this is absent, so the US pipeline is unchanged.
+   */
+  segments?: BusinessSegment[];
+  /** JP-only human-capital disclosure (有報); undefined for US. */
+  humanCapital?: HumanCapital;
   source: { provider: "FMP" | "radiokabu-edinet"; url: string | null };
 }
 
@@ -351,6 +401,115 @@ export interface ExplainerMetrics {
   revenueYoYPct: number | null;
   operatingIncomeYoYPct: number | null;
   netIncomeYoYPct: number | null;
+}
+
+/**
+ * Pick a legible scale for trillion-or-billion-yen segment figures: 兆円 (÷1e12)
+ * once any value reaches a trillion, else the pipeline's default 億円 (÷1e8). A
+ * dedicated choice (vs the BS box's fixed 億) keeps the big segment numbers from
+ * rendering as six-digit 億 values while still preserving exact proportions.
+ */
+function pickSegmentScale(maxRaw: number): { scale: number; unit: string } {
+  return maxRaw >= 1e12 ? { scale: 1e12, unit: "兆円" } : { scale: 1e8, unit: "億円" };
+}
+
+/**
+ * Build the segment-structure proportional columns from the latest period's
+ * segments (JP-only). Column 1 = 売上構成 (segment revenue), column 2 = セグメント資産
+ * (only when ≥2 segments disclose assets — i.e. exactly the finance/leasing filers
+ * where the revenue-vs-asset asymmetry is the story). Both columns iterate ONE
+ * canonical order (revenue-descending) so the same segment sits in the same vertical
+ * zone in both, making its dramatically different thickness directly comparable —
+ * a small revenue sliver becomes a huge asset slab (金融子会社の BS 膨張). On a single
+ * shared value→px scale the asset column also reads taller than revenue, which is
+ * itself the point (a balance-sheet stock dwarfs the yearly revenue flow). Returns
+ * empty columns when there is no ≥2-segment metric, so the caller omits the asset.
+ */
+export function segmentsToProportionSpec(fs: FinancialStatements): ProportionSpec {
+  const segs = fs.segments ?? [];
+  // Canonical order: largest revenue first (nulls last) — segments without sales
+  // (e.g. a holding-company investment segment) sink to the end.
+  const ordered = [...segs].sort(
+    (a, b) => (b.sales ?? -Infinity) - (a.sales ?? -Infinity),
+  );
+  const salesSegs = ordered.filter((s) => s.sales != null && s.sales > 0);
+  const assetSegs = ordered.filter((s) => s.assets != null && s.assets > 0);
+
+  const maxRaw = Math.max(
+    0,
+    ...salesSegs.map((s) => s.sales as number),
+    ...assetSegs.map((s) => s.assets as number),
+  );
+  const { scale, unit } = pickSegmentScale(maxRaw);
+  const seg = (label: string, raw: number): ProportionSegment => ({
+    label,
+    value: Math.round((raw / scale) * 10) / 10,
+  });
+
+  const columns: ProportionColumn[] = [];
+  if (salesSegs.length >= 2)
+    columns.push({
+      label: "売上構成",
+      segments: salesSegs.map((s) => seg(s.name, s.sales as number)),
+    });
+  if (assetSegs.length >= 2)
+    columns.push({
+      label: "セグメント資産",
+      segments: assetSegs.map((s) => seg(s.name, s.assets as number)),
+    });
+  return { kind: "proportion", unit, columns };
+}
+
+/** Per-segment shares + the asset-heavy asymmetry that drives BS inflation. */
+export interface SegmentShare {
+  name: string;
+  sales: number | null;
+  salesSharePct: number | null;
+  operatingIncome: number | null;
+  operatingMarginPct: number | null;
+  assets: number | null;
+  assetSharePct: number | null;
+}
+export interface SegmentFacts {
+  segments: SegmentShare[];
+  /**
+   * The segment whose asset share most exceeds its revenue share — the structural
+   * driver of balance-sheet inflation (a finance subsidiary). Null when segment
+   * assets aren't disclosed or no segment is asset-heavier than its revenue weight.
+   */
+  assetHeavy: { name: string; salesSharePct: number; assetSharePct: number } | null;
+}
+
+/**
+ * Read the segment structure as §2-safe facts: each segment's revenue share, its
+ * own operating margin, and (when disclosed) its asset share — plus the single
+ * segment whose asset share most outruns its revenue share. Pure computation, no
+ * thresholds/wording; the generator decides how to frame it. Empty when no segments.
+ */
+export function deriveSegmentFacts(fs: FinancialStatements): SegmentFacts {
+  const segs = fs.segments ?? [];
+  const salesTotal = sumOrNull(...segs.map((s) => s.sales));
+  const assetTotal = sumOrNull(...segs.map((s) => s.assets));
+  const segments: SegmentShare[] = segs.map((s) => ({
+    name: s.name,
+    sales: s.sales,
+    salesSharePct: marginPct(s.sales, salesTotal),
+    operatingIncome: s.operatingIncome,
+    operatingMarginPct: marginPct(s.operatingIncome, s.sales),
+    assets: s.assets,
+    assetSharePct: marginPct(s.assets, assetTotal),
+  }));
+  let assetHeavy: SegmentFacts["assetHeavy"] = null;
+  let bestGap = 0;
+  for (const s of segments) {
+    if (s.salesSharePct == null || s.assetSharePct == null) continue;
+    const gap = s.assetSharePct - s.salesSharePct;
+    if (gap > bestGap) {
+      bestGap = gap;
+      assetHeavy = { name: s.name, salesSharePct: s.salesSharePct, assetSharePct: s.assetSharePct };
+    }
+  }
+  return { segments, assetHeavy };
 }
 
 export function deriveExplainerMetrics(

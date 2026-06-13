@@ -3,11 +3,14 @@ import assert from "node:assert/strict";
 import {
   balanceSheetToProportionSpec,
   deriveExplainerMetrics,
+  deriveSegmentFacts,
   incomeStatementToWaterfallSpec,
   marginPct,
+  segmentsToProportionSpec,
 } from "./financialStatements";
 import type {
   BalanceSheet,
+  BusinessSegment,
   FinancialStatements,
   IncomeStatement,
 } from "./financialStatements";
@@ -368,4 +371,47 @@ test("deriveExplainerMetrics - all-null statements and empty periods stay null",
   const empty = fs(ZERO_BS);
   empty.periods = [];
   assert.equal(deriveExplainerMetrics(empty).netMarginPct, null);
+});
+
+// ── JP-only segment structure (構造の可視化 / 金融子会社の BS 膨張) ──────────────
+function segFs(segments?: BusinessSegment[]): FinancialStatements {
+  const f = fs(ZERO_BS, "JPY");
+  if (segments) f.segments = segments;
+  return f;
+}
+// トヨタ7203 FY2025 real shape: finance carries a small revenue slice but a huge
+// asset slab — the asymmetry that inflates the consolidated balance sheet.
+const TOYOTA_SEGS: BusinessSegment[] = [
+  { name: "自動車", nameRaw: "AutomotiveReportableSegment", sales: 41.08e12, operatingIncome: 4.62e12, assets: 29.35e12 },
+  { name: "金融", nameRaw: "FinancialServicesReportableSegment", sales: 3.45e12, operatingIncome: 0.57e12, assets: 43.83e12 },
+  { name: "その他", nameRaw: "OtherReportableSegments", sales: 0.57e12, operatingIncome: 0.18e12, assets: 3.01e12 },
+];
+
+test("segmentsToProportionSpec - 2 columns (売上構成 ｜ セグメント資産), 兆円 scale, canonical order", () => {
+  const spec = segmentsToProportionSpec(segFs(TOYOTA_SEGS));
+  assert.equal(spec.unit, "兆円");
+  assert.deepEqual(spec.columns.map((c) => c.label), ["売上構成", "セグメント資産"]);
+  // Both columns iterate the same revenue-descending order so a segment sits in
+  // the same vertical zone in both — its thickness flips (金融 sliver→slab).
+  assert.deepEqual(spec.columns[0]!.segments.map((s) => s.label), ["自動車", "金融", "その他"]);
+  assert.deepEqual(spec.columns[1]!.segments.map((s) => s.label), ["自動車", "金融", "その他"]);
+  assert.equal(spec.columns[0]!.segments[1]!.value, 3.5); // 金融 sales 3.45兆 → 3.5
+  assert.equal(spec.columns[1]!.segments[1]!.value, 43.8); // 金融 assets 43.83兆 → 43.8
+});
+
+test("segmentsToProportionSpec - sales-only segments give 1 column; <2 gives none", () => {
+  const noAssets = TOYOTA_SEGS.map((s) => ({ ...s, assets: null }));
+  const spec = segmentsToProportionSpec(segFs(noAssets));
+  assert.deepEqual(spec.columns.map((c) => c.label), ["売上構成"]);
+  assert.equal(segmentsToProportionSpec(segFs()).columns.length, 0); // US / no segments
+});
+
+test("deriveSegmentFacts - shares + asset-heavy asymmetry (金融)", () => {
+  const f = deriveSegmentFacts(segFs(TOYOTA_SEGS));
+  const fin = f.segments.find((s) => s.name === "金融")!;
+  near(fin.salesSharePct!, 7.65); // 3.45 / 45.1
+  near(fin.assetSharePct!, 57.53); // 43.83 / 76.19
+  near(fin.operatingMarginPct!, 16.52); // 0.57 / 3.45
+  assert.equal(f.assetHeavy!.name, "金融"); // largest assetShare − salesShare gap
+  assert.equal(deriveSegmentFacts(segFs()).assetHeavy, null); // no segments
 });
