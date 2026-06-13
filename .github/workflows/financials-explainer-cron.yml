@@ -1,0 +1,188 @@
+name: financials-explainer-cron
+
+# Daily evergreen single-company explainer cron (epic #65). Standing production
+# pipeline that fans the financial-explainer lane (financials-explainer.yml) over
+# a rotating watchlist so coverage grows on its own, without a human picking a
+# symbol each day.
+#
+#   select  — select-explainer-batch.ts picks the N least-recently-generated
+#             symbols from explainer-watchlist.json (N = EXPLAINER_BATCH_SIZE,
+#             clamped to the 10-20 daily band, default 12). Rotation state lives
+#             in state/explainer-published.json, committed back by `record`.
+#   render  — per-symbol matrix (us=FMP / jp=EDINET): fetch -> generate:fin
+#             (Gemini fallback, numbers code-fixed) -> §2 gate -> VOICEVOX TTS ->
+#             Remotion FinancialExplainer mp4. fail-fast:false so one broken
+#             symbol never sinks the batch.
+#   record  — mark only the symbols that actually produced a ContentPackage, so
+#             a failed shard is retried next cycle (and stays visible) instead of
+#             silently dropping out of rotation. Commits the ledger back to main.
+#
+# Lane split: this cron is Gemini-only (gen_source=gemini, NO shared Jules
+# quota). Jules deep-dives stay a MANUAL premium lane (financials-explainer-
+# jules.yml) so the daily cron never auto-competes with omochairo's articles.
+#
+# NOTE: a new workflow is only dispatchable / schedulable once this file is on
+# the default branch (`gh workflow run` 404s until then).
+
+on:
+  schedule:
+    # 21:30 UTC = 06:30 JST. Evergreen 解説 has no market-settle dependency; this
+    # slot just avoids the phase1-earnings cron (22:00 UTC).
+    - cron: "30 21 * * *"
+  workflow_dispatch:
+    inputs:
+      size:
+        description: "Symbols this run (clamped to the 10-20 daily band; default 12)"
+        default: "12"
+        required: false
+      render:
+        description: "Run the heavy TTS+render stage (off = stop after the §2 gate)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: financials-explainer-cron
+  cancel-in-progress: false
+
+permissions:
+  contents: write # record commits the rotation ledger back to main
+
+jobs:
+  select:
+    runs-on: ubuntu-22.04
+    outputs:
+      batch: ${{ steps.pick.outputs.batch }}
+      count: ${{ steps.pick.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Select today's rotation batch
+        id: pick
+        env:
+          EXPLAINER_BATCH_SIZE: ${{ github.event.inputs.size || '12' }}
+        run: npm run select:explainer
+
+  render:
+    needs: select
+    if: ${{ needs.select.outputs.count != '0' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.select.outputs.batch) }}
+    runs-on: ubuntu-22.04
+    services:
+      voicevox:
+        image: voicevox/voicevox_engine:cpu-0.25.2
+        ports:
+          - 50021:50021
+    env:
+      SYMBOL: ${{ matrix.symbol }}
+      MARKET: ${{ matrix.market }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium runtime deps (Remotion render)
+        if: ${{ github.event.inputs.render != 'false' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnss3 libdbus-1-3 libatk1.0-0 libgbm1 libasound2 \
+            libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
+            libatk-bridge2.0-0 libcups2 libpango-1.0-0 libcairo2
+      - name: Fetch FinancialStatements (us=FMP / jp=EDINET)
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          RADIKABUNAVI_API_KEY: ${{ secrets.RADIKABUNAVI_API_KEY }}
+        run: |
+          if [ "$MARKET" = "jp" ]; then
+            npm run fetch:fin:jp -- "$SYMBOL" --years 5
+          else
+            npm run fetch:fin -- "$SYMBOL" --years 5
+          fi
+      - name: Generate explainer ContentPackage (Gemini, numbers code-fixed)
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
+        run: npm run generate:fin -- "$SYMBOL"
+      - name: Gate (validate + §2 compliance) — fail stops this shard
+        run: npm run check -- "outputs/content/$SYMBOL-explainer.json"
+      - name: Upload ContentPackage (record job marks only what landed here)
+        uses: actions/upload-artifact@v4
+        with:
+          name: cron-fin-content-${{ matrix.symbol }}
+          path: outputs/content/${{ matrix.symbol }}-explainer.json
+          if-no-files-found: error
+      - name: Wait for VOICEVOX engine
+        if: ${{ github.event.inputs.render != 'false' }}
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:50021/version; then echo ready; exit 0; fi
+            echo "waiting for VOICEVOX... ($i)"; sleep 5
+          done
+          echo "VOICEVOX did not become ready"; exit 1
+      - name: TTS (VOICEVOX, speaker 2)
+        if: ${{ github.event.inputs.render != 'false' }}
+        env:
+          VOICEVOX_URL: http://localhost:50021
+        run: npm run tts -- "outputs/content/$SYMBOL-explainer.json"
+      - name: Render explainer mp4 + thumbnail (Remotion FinancialExplainer)
+        if: ${{ github.event.inputs.render != 'false' }}
+        working-directory: packages/video-generator
+        run: |
+          node scripts/render-props.mjs \
+            "$GITHUB_WORKSPACE/outputs/content/$SYMBOL-explainer.json" out/render-props.json
+          npx remotion render src/index.ts FinancialExplainer "out/$SYMBOL.mp4" \
+            --props=out/render-props.json
+          npx remotion still src/index.ts Thumbnail "out/$SYMBOL.thumb.png" \
+            --props=out/render-props.json
+      - name: Upload explainer mp4 + thumbnail
+        if: ${{ github.event.inputs.render != 'false' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cron-fin-explainer-${{ matrix.symbol }}
+          path: |
+            packages/video-generator/out/${{ matrix.symbol }}.mp4
+            packages/video-generator/out/${{ matrix.symbol }}.thumb.png
+            outputs/content/${{ matrix.symbol }}-explainer.json
+          if-no-files-found: error
+
+  record:
+    needs: [select, render]
+    # Run even if some shards failed, but only when there was a batch to mark.
+    if: ${{ always() && needs.select.outputs.count != '0' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Download ContentPackages that actually landed
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cron-fin-content-*
+          path: dl
+          merge-multiple: true
+      - name: Mark generated symbols + commit rotation ledger
+        run: |
+          syms=$(ls dl/*-explainer.json 2>/dev/null \
+            | sed -E 's#.*/([^/]+)-explainer\.json#\1#' | tr '\n' ' ')
+          echo "rendered symbols: ${syms:-<none>}"
+          if [ -z "$syms" ]; then echo "nothing landed — no ledger update"; exit 0; fi
+          npm run mark:explainer -- $syms
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/explainer-published.json
+          git diff --cached --quiet || git commit -m "chore(fin-cron): rotate explainer ledger [skip ci]"
+          git push origin HEAD:${{ github.ref_name }}
