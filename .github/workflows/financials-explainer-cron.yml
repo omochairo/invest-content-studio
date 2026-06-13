@@ -9,17 +9,21 @@ name: financials-explainer-cron
 #             symbols from explainer-watchlist.json (N = EXPLAINER_BATCH_SIZE,
 #             clamped to the 10-20 daily band, default 12). Rotation state lives
 #             in state/explainer-published.json, committed back by `record`.
-#   render  — per-symbol matrix (us=FMP / jp=EDINET): fetch -> generate:fin
-#             (Gemini fallback, numbers code-fixed) -> §2 gate -> VOICEVOX TTS ->
-#             Remotion FinancialExplainer mp4. fail-fast:false so one broken
-#             symbol never sinks the batch.
-#   record  — mark only the symbols that actually produced a ContentPackage, so
-#             a failed shard is retried next cycle (and stays visible) instead of
-#             silently dropping out of rotation. Commits the ledger back to main.
+#   render  — per-symbol matrix (us=FMP / jp=EDINET): fetch -> HARVEST-FIRST
+#             (Jules prose if committed -> zero Gemini; else Gemini fallback,
+#             numbers code-fixed) -> §2 gate -> VOICEVOX TTS -> Remotion
+#             FinancialExplainer mp4. fail-fast:false so one broken symbol never
+#             sinks the batch.
+#   record  — mark only the symbols that actually produced a video, so a failed
+#             shard is retried next cycle (and stays visible) instead of silently
+#             dropping out of rotation. Commits the ledger back to main.
 #
-# Lane split: this cron is Gemini-only (gen_source=gemini, NO shared Jules
-# quota). Jules deep-dives stay a MANUAL premium lane (financials-explainer-
-# jules.yml) so the daily cron never auto-competes with omochairo's articles.
+# Lane split: harvest-first means prose-backed symbols render with NO Gemini
+# (deterministic, highest quality); only prose-less symbols touch Gemini's free
+# tier (5 RPM, SHARED with omochairo — best-effort, may 429, retried next cycle).
+# Jules deep-dives stay a MANUAL premium lane (financials-explainer-jules.yml) so
+# the cron never auto-competes for the shared Jules quota; it only ever READS the
+# committed prose. As that prose set grows, the cron's reliable coverage grows.
 #
 # NOTE: a new workflow is only dispatchable / schedulable once this file is on
 # the default branch (`gh workflow run` 404s until then).
@@ -117,11 +121,25 @@ jobs:
           else
             npm run fetch:fin -- "$SYMBOL" --years 5
           fi
-      - name: Generate explainer ContentPackage (Gemini, numbers code-fixed)
+      # Harvest-first: if a Jules deep-dive prose exists for this symbol (the
+      # manual premium lane), assemble it with ZERO Gemini calls — deterministic
+      # and highest quality. Only symbols WITHOUT committed prose fall back to
+      # Gemini, which on the free tier (5 generate RPM, shared with omochairo) is
+      # best-effort and may 429; those shards simply retry next cycle (record
+      # marks only what actually rendered). As the premium lane adds more prose,
+      # more of the watchlist becomes Gemini-free and deterministically reliable.
+      - name: Prose -> ContentPackage (Jules harvest if present, else Gemini)
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-2.5-flash' }}
-        run: npm run generate:fin -- "$SYMBOL"
+        run: |
+          if [ -f "jules-research/$SYMBOL-explainer.prose.json" ]; then
+            echo "Jules prose found for $SYMBOL -> harvest (no Gemini)"
+            npm run harvest:jules:fin -- "$SYMBOL"
+          else
+            echo "no Jules prose for $SYMBOL -> Gemini fallback (best-effort)"
+            npm run generate:fin -- "$SYMBOL"
+          fi
       - name: Gate (validate + §2 compliance) — fail stops this shard
         run: npm run check -- "outputs/content/$SYMBOL-explainer.json"
       - name: Upload ContentPackage (record job marks only what landed here)
