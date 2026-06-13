@@ -133,6 +133,25 @@ test("balanceSheetToProportionSpec - subtotal null falls back to summing line it
   );
 });
 
+test("balanceSheetToProportionSpec - single-box fallback (JP residual: only totals)", () => {
+  // The JP/EDINET fetcher nulls the unreliable current/non-current split and
+  // reports 負債 as a residual; the box must still draw 資産 | 負債+純資産.
+  const bs: BalanceSheet = {
+    ...ZERO_BS,
+    totalAssets: 93_601_350_000_000,
+    totalLiabilities: 56_722_437_000_000,
+    totalEquity: 36_878_913_000_000,
+  };
+  const spec = balanceSheetToProportionSpec(fs(bs, "JPY"));
+  const assets = spec.columns.find((c) => c.label === "資産");
+  const right = spec.columns.find((c) => c.label === "負債・純資産");
+  assert.deepEqual(assets!.segments.map((s) => s.label), ["資産"]);
+  assert.deepEqual(right!.segments.map((s) => s.label), ["負債", "純資産"]);
+  // both columns balance by the identity (equal total height).
+  const colSum = (c: typeof assets) => c!.segments.reduce((a, s) => a + s.value, 0);
+  assert.equal(colSum(assets), colSum(right));
+});
+
 test("balanceSheetToProportionSpec - empty BS yields no columns, currency-aware unit", () => {
   const spec = balanceSheetToProportionSpec(fs(ZERO_BS, "JPY"));
   assert.equal(spec.unit, "億円");
