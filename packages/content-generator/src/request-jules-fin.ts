@@ -18,8 +18,16 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import type { FinancialStatements } from "@ics/shared";
+import { type FinancialStatements, deriveInterpretationProfile } from "@ics/shared";
 import { buildExplainerAssets, buildExplainerPlan, buildPrompt } from "./generate-financial-content";
+
+/** Human-readable archetype label for the Jules research steer. */
+const ARCHETYPE_LABEL: Record<string, string> = {
+  "financial-institution": "金融機関（銀行・保険）型＝BSそのものが事業",
+  "investment-holding": "投資持株型＝純利益が投資成果で変動",
+  "financialized-industrial": "金融子会社を抱える製造業型＝売上と資産構成のズレ",
+  standard: "標準的な事業会社型＝費用構造と利益の蓄積",
+};
 import { createSession, recentCreationCount, resolveSource } from "./jules-client";
 
 try {
@@ -41,12 +49,18 @@ const proseFile = (symbol: string) => `jules-research/${symbol}-explainer.prose.
 
 /** Wrap the shared base prompt with Jules-specific research + delivery. */
 function julesPrompt(fs: FinancialStatements, symbol: string): string {
-  const plan = buildExplainerPlan(buildExplainerAssets(fs), fs);
-  const base = buildPrompt(fs, plan);
+  const profile = deriveInterpretationProfile(fs);
+  const plan = buildExplainerPlan(buildExplainerAssets(fs), fs, profile);
+  const base = buildPrompt(fs, plan, "", profile);
   return `あなたは財務諸表を中立的に読み解く、単独のリサーチャー兼ナレーターです。
 時間をかけてよい前提で、公開情報（10-K・有価証券報告書・IR・一次情報）を深く調査し、
 企業のビジネスモデル・事業構造の一般的背景を文脈として厚くした、財務諸表の読み解き解説台本（prose）を作成してください。
 浅い数字の読み上げではなく、数字が財務構造について何を意味するかを一段深く説明するのが狙いです。
+
+# この企業の構造型（調査の最優先軸）
+財務諸表の形から、この企業は「${ARCHETYPE_LABEL[profile.archetype] ?? profile.archetype}」と判定されています。
+本文中ほどの『この企業の読み解き軸』を最優先の調査対象とし、その軸に沿って一次情報を深掘りしてください
+（汎用的な利益率・自己資本比率の一般論に流さず、この構造型ならではの読み解きを主役にする）。
 
 # 深い調査の成果をどこに反映するか（最重要・これが他社との差別化）
 あなたが調査した「その企業固有の事業構造」を、次の3点で必ず台本に効かせてください。テンプレ的な汎用文（どの企業にも当てはまる言い回し）は不可です:
