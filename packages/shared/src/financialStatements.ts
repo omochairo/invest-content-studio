@@ -211,6 +211,7 @@ export function balanceSheetToProportionSpec(
       ),
   );
 
+  // Liabilities first, then 純資産, so the column reads 負債 → 純資産 top-to-bottom.
   const liabEquity: ProportionSegment[] = [];
   push(
     liabEquity,
@@ -228,11 +229,20 @@ export function balanceSheetToProportionSpec(
     "固定負債",
     bs.totalNonCurrentLiabilities ?? sumOrNull(bs.longTermDebt, bs.otherNonCurrentLiabilities),
   );
+  // Single-box fallback: when neither liability subtotal could be drawn (e.g. a
+  // source whose current/non-current split is unreliable, so the JP/EDINET
+  // fetcher nulls it and reports 負債 only as a residual), draw one 負債 box from
+  // totalLiabilities so the column still balances 資産 by the accounting identity.
+  if (liabEquity.length === 0) push(liabEquity, "負債", bs.totalLiabilities);
   push(
     liabEquity,
     "純資産",
     bs.totalEquity ?? sumOrNull(bs.commonStock, bs.retainedEarnings, bs.otherEquity),
   );
+
+  // Same fallback on the asset side: collapse to a single 資産 box (totalAssets)
+  // when the current/non-current detail is absent or didn't reconcile.
+  if (assets.length === 0) push(assets, "資産", bs.totalAssets);
 
   const columns: ProportionColumn[] = [];
   if (assets.length) columns.push({ label: "資産", segments: assets });
