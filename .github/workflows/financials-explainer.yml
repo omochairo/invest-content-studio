@@ -2,7 +2,10 @@ name: financials-explainer
 
 # Financial-explainer (読み解き層) end-to-end pipeline, epic #65 — produces the
 # NVDA 1-symbol MVP mp4 entirely in CI (the only execution host, see SPEC/AGENTS):
-#   T1 fetch     — FMP statements -> FinancialStatements (LLM-free numbers)
+#   fetch        — statements -> FinancialStatements (LLM-free numbers). The
+#                  `market` input picks the source: us=FMP ticker (T1) or
+#                  jp=EDINET via ラジ株ナビ 4-digit TSE code (T2). Same shape, so
+#                  every step below is source-agnostic.
 #   E  prose     — FinancialStatements -> chaptered ContentPackage. Two sources via
 #                  the `gen_source` input: jules (PRIMARY — harvest the committed
 #                  Jules deep-dive prose, see financials-explainer-jules.yml) or
@@ -38,6 +41,14 @@ on:
       years:
         description: "Number of fiscal years (annual), newest first"
         default: "5"
+        required: true
+      market:
+        description: "Data source: us (FMP, tickers) or jp (EDINET via ラジ株ナビ, 4-digit TSE codes). jp has no Jules prose yet — use gen_source=gemini."
+        type: choice
+        options:
+          - us
+          - jp
+        default: us
         required: true
       gen_source:
         description: "Prose source: jules (harvest committed prose, PRIMARY) or gemini (generate:fin fallback)"
@@ -105,10 +116,19 @@ jobs:
             libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
             libatk-bridge2.0-0 libcups2 libpango-1.0-0 libcairo2
 
-      - name: T1 Fetch FinancialStatements (FMP)
+      # Either source lands the SAME outputs/financials/$SYMBOL.json shape, so
+      # every step below is source-agnostic. US uses a ticker (NVDA); JP uses a
+      # 4-digit TSE code (7203) and the EDINET residual/reconciliation mapper.
+      - name: T1 Fetch FinancialStatements (FMP, US)
+        if: ${{ github.event.inputs.market != 'jp' }}
         env:
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
         run: npm run fetch:fin -- "$SYMBOL" --years "$YEARS"
+      - name: T2 Fetch FinancialStatements (EDINET via ラジ株ナビ, JP)
+        if: ${{ github.event.inputs.market == 'jp' }}
+        env:
+          RADIKABUNAVI_API_KEY: ${{ secrets.RADIKABUNAVI_API_KEY }}
+        run: npm run fetch:fin:jp -- "$SYMBOL" --years "$YEARS"
       - name: Show statements (sanity peek)
         run: |
           node -e "const s=require('./outputs/financials/'+process.argv[1]+'.json'); const p=s.periods[0]; console.log(JSON.stringify({symbol:s.symbol,name:s.companyName,periods:s.periods.length,latest:p&&p.period,revenue:p&&p.incomeStatement.revenue,totalAssets:p&&p.balanceSheet.totalAssets},null,2))" "$SYMBOL"
