@@ -43,7 +43,7 @@ on:
         default: "5"
         required: true
       market:
-        description: "Data source: us (FMP, tickers) or jp (EDINET via ラジ株ナビ, 4-digit TSE codes). jp has no Jules prose yet — use gen_source=gemini."
+        description: "Data source: us (FMP, tickers) or jp (EDINET via ラジ株ナビ, 4-digit TSE codes). Both support gen_source=jules (request via financials-explainer-jules.yml first)."
         type: choice
         options:
           - us
