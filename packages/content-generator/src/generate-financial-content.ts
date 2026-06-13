@@ -270,27 +270,52 @@ ${beats}
 ${retryNote}`;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Seconds to wait from a 429/503 body's RetryInfo (`retryDelay: "53s"`), if any. */
+function retryDelaySec(body: string): number | null {
+  const m = body.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/);
+  return m ? Number(m[1]) : null;
+}
+
 async function callGemini(prompt: string): Promise<{ title: string; beats: Beat[] }> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-        temperature: 0.6,
-      },
-    }),
-  });
-  if (!res.ok) throw new Error(`Gemini -> HTTP ${res.status}: ${(await res.text()).slice(0, 1500)}`);
-  const data = (await res.json()) as {
-    candidates?: { content?: { parts?: { text?: string }[] } }[];
-  };
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Gemini: empty response");
-  return JSON.parse(text) as { title: string; beats: Beat[] };
+  // The free tier caps generate_content at 5 RPM/model, so a batch lane (e.g. the
+  // explainer cron fanning many symbols at once) routinely trips 429
+  // RESOURCE_EXHAUSTED. Retry on 429/503, honoring the server's retryDelay when
+  // present, so each shard self-heals into the rate window instead of failing.
+  const MAX_ATTEMPTS = 6;
+  for (let attempt = 1; ; attempt++) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: RESPONSE_SCHEMA,
+          temperature: 0.6,
+        },
+      }),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as {
+        candidates?: { content?: { parts?: { text?: string }[] } }[];
+      };
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) throw new Error("Gemini: empty response");
+      return JSON.parse(text) as { title: string; beats: Beat[] };
+    }
+    const body = (await res.text()).slice(0, 1500);
+    const retriable = res.status === 429 || res.status === 503;
+    if (!retriable || attempt >= MAX_ATTEMPTS) {
+      throw new Error(`Gemini -> HTTP ${res.status}: ${body}`);
+    }
+    // Honor server-advised delay; otherwise exponential backoff capped at 60s.
+    const waitMs = (retryDelaySec(body) ?? Math.min(2 ** attempt, 60)) * 1000;
+    console.error(`Gemini HTTP ${res.status} (attempt ${attempt}/${MAX_ATTEMPTS}) — retrying in ${waitMs / 1000}s`);
+    await sleep(waitMs);
+  }
 }
 
 export function assembleExplainer(
